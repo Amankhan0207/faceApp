@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FaceSort - Test Harness</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div class="shell">
+  <aside class="side">
+    <div class="brand">
+      <h1>Face<span>Sort</span></h1>
+      <p>Face detection & matching test harness</p>
+    </div>
+
+    <div class="side-body" style="padding: 16px;">
+      <button class="btn danger" id="resetWorkspace" style="width:100%">Start New Test</button>
+    </div>
+
+    <div class="side-foot">
+      <button class="btn ghost sm" id="openSettings" style="width:100%">Settings</button>
+      <div class="label" id="deviceTag" style="margin-top:8px;text-align:center"></div>
+    </div>
+  </aside>
+
+  <main class="main" id="main"></main>
+</div>
+
+<div id="sheet"></div>
+<script src="/app.js"></script>
+</body>
+</html>
