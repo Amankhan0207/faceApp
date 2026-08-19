@@ -40,6 +40,10 @@ async function api(path, options = {}) {
     headers: options.body instanceof FormData ? {} : { "Content-Type": "application/json" },
     ...options,
   });
+  if (res.status === 401 && path !== "/login") {
+    window.location.reload();
+    return;
+  }
   if (!res.ok) {
     let detail = res.statusText;
     try { detail = (await res.json()).detail || detail; } catch {}
@@ -110,6 +114,7 @@ async function boot() {
 
   $("resetWorkspace").onclick = resetWorkspace;
   $("openSettings").onclick = openSettings;
+  $("logoutBtn").onclick = logout;
 
   await loadPhotos();
   S.run = await api("/events/workspace/run");
@@ -155,6 +160,15 @@ async function resetWorkspace() {
     render();
   } catch (err) {
     toast("Failed to reset workspace: " + err.message, true);
+  }
+}
+
+async function logout() {
+  try {
+    await api("/logout", { method: "POST" });
+    window.location.reload();
+  } catch (err) {
+    toast("Failed to logout: " + err.message, true);
   }
 }
 

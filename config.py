@@ -27,6 +27,8 @@ DEFAULTS = {
     "thumb_size": 420,
     # Copy matched files, or hard-link them to save disk.
     "copy_mode": "copy",
+    "admin_username": "admin",
+    "admin_password": "admin123",
 }
 
 _lock = threading.Lock()

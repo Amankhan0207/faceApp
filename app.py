@@ -32,11 +32,12 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+import login_template
 
 import config
 import engine
@@ -49,6 +50,24 @@ app.add_middleware(
 )
 
 STATIC = Path(__file__).parent / "static"
+
+SESSION_TOKEN = "facesort_session_active"
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path in ["/api/login", "/api/logout", "/favicon.ico"]:
+        return await call_next(request)
+    session_token = request.cookies.get("session_token")
+    is_auth = (session_token == SESSION_TOKEN)
+    if path.startswith("/api/"):
+        if not is_auth:
+            return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+        return await call_next(request)
+    if path in ["/", "/index.html"]:
+        if not is_auth:
+            return HTMLResponse(content=login_template.get_login_html())
+    return await call_next(request)
 
 
 def require_event(event_id: str):
@@ -63,6 +82,33 @@ def require_person(event_id: str, person_id: str):
     if not record:
         raise HTTPException(404, "Person not found.")
     return record
+
+
+# ---------------------------------------------------------------- auth
+
+class LoginIn(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/login")
+def login(body: LoginIn, response: Response):
+    expected_user = config.get("admin_username")
+    expected_pass = config.get("admin_password")
+    if body.username == expected_user and body.password == expected_pass:
+        response.set_cookie(
+            key="session_token",
+            value=SESSION_TOKEN,
+            httponly=True,
+            samesite="lax",
+            max_age=3600 * 24 * 7
+        )
+        return {"detail": "Authenticated"}
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
+@app.post("/api/logout")
+def logout(response: Response):
+    response.delete_cookie(key="session_token")
+    return {"detail": "Logged out"}
 
 
 # ---------------------------------------------------------------- settings
