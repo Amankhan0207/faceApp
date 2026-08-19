@@ -244,8 +244,8 @@ body::after {
     </button>
   </form>
   
-  <div class="toggle-mode" id="toggleBlock">
-    Don't have an account? <a id="toggleBtn">Create one</a>
+  <div class="toggle-mode">
+    <span id="toggleText">Don't have an account? </span><a id="toggleBtn">Create one</a>
   </div>
 </div>
 
@@ -257,33 +257,37 @@ const spinner = document.getElementById("spinner");
 const errorBlock = document.getElementById("errorBlock");
 const successBlock = document.getElementById("successBlock");
 const brandText = document.getElementById("brandText");
+const toggleText = document.getElementById("toggleText");
 const toggleBtn = document.getElementById("toggleBtn");
-const toggleBlock = document.getElementById("toggleBlock");
 
 let isLoginMode = true;
 
-toggleBtn.addEventListener("click", () => {
-  // Toggle state
-  isLoginMode = !isLoginMode;
+function setMode(loginMode) {
+  isLoginMode = loginMode;
   
   // Clear any existing alerts
   errorBlock.style.display = "none";
-  successBlock.style.display = "none";
+  if (!isLoginMode) {
+    successBlock.style.display = "none";
+  }
   
   if (isLoginMode) {
     brandText.textContent = "Sign in to manage your workspace";
     btnText.textContent = "Sign In";
-    toggleBlock.innerHTML = `Don't have an account? <a id="toggleBtn">Create one</a>`;
+    toggleText.textContent = "Don't have an account? ";
+    toggleBtn.textContent = "Create one";
   } else {
     brandText.textContent = "Create a new account to get started";
     btnText.textContent = "Register";
-    toggleBlock.innerHTML = `Already have an account? <a id="toggleBtn">Sign in</a>`;
+    toggleText.textContent = "Already have an account? ";
+    toggleBtn.textContent = "Sign in";
   }
   
-  // Re-bind the click listener because innerHTML wipes the children elements
-  document.getElementById("toggleBtn").addEventListener("click", arguments.callee);
-  
   document.getElementById("username").focus();
+}
+
+toggleBtn.addEventListener("click", () => {
+  setMode(!isLoginMode);
 });
 
 form.addEventListener("submit", async (e) => {
@@ -316,30 +320,11 @@ form.addEventListener("submit", async (e) => {
         successBlock.textContent = "Account created successfully! You can now sign in.";
         successBlock.style.display = "block";
         
-        // Reset form controls
+        // Reset form password
         document.getElementById("password").value = "";
         
         // Go back to login mode automatically
-        isLoginMode = true;
-        brandText.textContent = "Sign in to manage your workspace";
-        btnText.textContent = "Sign In";
-        toggleBlock.innerHTML = `Don't have an account? <a id="toggleBtn">Create one</a>`;
-        document.getElementById("toggleBtn").addEventListener("click", () => {
-          isLoginMode = !isLoginMode;
-          errorBlock.style.display = "none";
-          successBlock.style.display = "none";
-          if (isLoginMode) {
-            brandText.textContent = "Sign in to manage your workspace";
-            btnText.textContent = "Sign In";
-            toggleBlock.innerHTML = `Don't have an account? <a id="toggleBtn">Create one</a>`;
-          } else {
-            brandText.textContent = "Create a new account to get started";
-            btnText.textContent = "Register";
-            toggleBlock.innerHTML = `Already have an account? <a id="toggleBtn">Sign in</a>`;
-          }
-          document.getElementById("toggleBtn").addEventListener("click", arguments.callee);
-          document.getElementById("username").focus();
-        });
+        setMode(true);
         
         submitBtn.disabled = false;
         spinner.style.display = "none";
