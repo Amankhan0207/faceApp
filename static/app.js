@@ -11,11 +11,29 @@ const S = {
   poll: null,
   viewPersonId: null,
   viewMatches: [],
+  openPersonFolderId: null,
 };
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function storage_safe_name(name) {
+  if (!name) return "unnamed";
+  let s = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  s = s.replace(/[<>:"/\\|?*\x00-\x1f]/g, "");
+  s = s.replace(/\s+/g, " ").trim();
+  s = s.replace(/^[. ]+|[. ]+$/g, "");
+  const upper = s.toUpperCase().split(".")[0];
+  const reserved = ["CON", "PRN", "AUX", "NUL"];
+  for (let i = 1; i <= 9; i++) {
+    reserved.push("COM" + i, "LPT" + i);
+  }
+  if (reserved.includes(upper)) {
+    s = "_" + s;
+  }
+  return s.slice(0, 80) || "unnamed";
+}
 
 async function api(path, options = {}) {
   const res = await fetch("/api" + path, {
@@ -131,6 +149,7 @@ async function resetWorkspace() {
     S.tab = "upload";
     S.viewPersonId = null;
     S.viewMatches = [];
+    S.openPersonFolderId = null;
     S.run = { state: "idle" };
     toast("Workspace reset successfully");
     render();
@@ -558,37 +577,90 @@ async function renderView() {
     return;
   }
 
-  if (!S.viewPersonId || !people.some((p) => p.id === S.viewPersonId)) {
-    S.viewPersonId = people[0].id;
-    S.viewMatches = [];
-  }
-
-  const selectedPerson = people.find((p) => p.id === S.viewPersonId);
-
-  $("tabBody").innerHTML = `
-    <div class="card">
-      <div class="spread">
-        <div>
-          <h3>View Matches</h3>
-          <p class="hint">Matches are calculated on-the-fly from the cache at the current threshold.</p>
+  if (S.openPersonFolderId && people.some((p) => p.id === S.openPersonFolderId)) {
+    const person = people.find((p) => p.id === S.openPersonFolderId);
+    $("tabBody").innerHTML = `
+      <div class="folder-open-view">
+        <div class="folder-back-row">
+          <button class="btn sm" id="closeFolderBtn">
+            ← Back to Folders
+          </button>
         </div>
-        <div class="row">
-          <label for="viewPersonSelect" class="label">Person:</label>
-          <select class="input" id="viewPersonSelect" style="min-width: 150px;">
-            ${people.map((p) => `<option value="${p.id}" ${p.id === S.viewPersonId ? "selected" : ""}>${esc(p.name)}</option>`).join("")}
-          </select>
+        <div class="card" style="margin-bottom: 0;">
+          <div class="spread">
+            <div>
+              <h3>Folder: ${esc(person.name)}</h3>
+              <p class="hint" style="margin-bottom: 0;">Matches calculated at current threshold. Files synced to disk folder: <strong class="num" style="font-size: 11.5px;">output/${esc(storage_safe_name(person.name))}/</strong></p>
+            </div>
+          </div>
         </div>
+        <div id="viewResultsBody"></div>
+      </div>`;
+
+    $("closeFolderBtn").onclick = () => {
+      S.openPersonFolderId = null;
+      render();
+    };
+
+    S.viewPersonId = S.openPersonFolderId;
+    await loadMatchesAndRender();
+  } else {
+    $("tabBody").innerHTML = `
+      <div class="card">
+        <h3>Output Folders</h3>
+        <p class="hint" style="margin-bottom: 0;">Click on a folder to view the photos matched to that person.</p>
       </div>
-    </div>
+      <div class="folder-grid" id="foldersGrid"></div>`;
 
-    <div id="viewResultsBody"></div>`;
+    const grid = $("foldersGrid");
+    grid.innerHTML = people.map((p) => {
+      let coverHtml = `<div class="folder-placeholder-icon">📁</div>`;
+      if (p.ready && p.refs && p.refs.length > 0) {
+        const photoName = p.refs[0].split("::")[0];
+        coverHtml = `<img class="folder-cover" loading="lazy" src="/api/events/workspace/photos/${encodeURIComponent(photoName)}?thumb=true" alt="">`;
+      }
 
-  $("viewPersonSelect").onchange = (e) => {
-    S.viewPersonId = e.target.value;
-    loadMatchesAndRender();
-  };
+      return `
+        <div class="folder-card" data-folder-id="${p.id}">
+          <div class="folder-tab"></div>
+          <div class="folder-cover-container">
+            ${coverHtml}
+          </div>
+          <div class="folder-info">
+            <div class="folder-title">${esc(p.name)}</div>
+            <div class="folder-meta" id="folder-meta-${p.id}">Loading photos...</div>
+          </div>
+        </div>`;
+    }).join("");
 
-  await loadMatchesAndRender();
+    document.querySelectorAll("[data-folder-id]").forEach((el) => {
+      el.onclick = () => {
+        S.openPersonFolderId = el.dataset.folderId;
+        render();
+      };
+    });
+
+    people.forEach((p) => {
+      loadFolderMatchCount(p.id);
+    });
+  }
+}
+
+async function loadFolderMatchCount(personId) {
+  const metaEl = $(`folder-meta-${personId}`);
+  if (!metaEl) return;
+  try {
+    const person = S.event.persons.find((p) => p.id === personId);
+    if (!person || !person.ready) {
+      metaEl.textContent = "No reference face";
+      return;
+    }
+    const data = await api(`/events/workspace/persons/${personId}/matches`);
+    const count = data.matches ? data.matches.length : 0;
+    metaEl.textContent = `${count} photo${count === 1 ? "" : "s"}`;
+  } catch (err) {
+    metaEl.textContent = "Error loading";
+  }
 }
 
 async function loadMatchesAndRender() {

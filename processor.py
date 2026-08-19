@@ -5,6 +5,7 @@ Processing just populates cache/vectors.npy and cache/index.json.
 Matching is calculated on-the-fly when viewing results.
 """
 
+import os
 import shutil
 import threading
 import time
@@ -179,6 +180,44 @@ def _guarded(event_id):
         _update(event_id, state="error", message=f"Stopped — processed {done} / {total}, then failed: {exc}")
 
 
+def sync_output_folder(event_id, person_id, matches):
+    person = storage.get_person(event_id, person_id)
+    if not person:
+        return
+    
+    person_name = person["name"]
+    out_dir = storage.output_dir(event_id) / storage.safe_name(person_name)
+    
+    # Clear existing folder
+    if out_dir.exists():
+        shutil.rmtree(out_dir, ignore_errors=True)
+        
+    if not matches:
+        return
+        
+    out_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Copy/hardlink matched photos
+    copy_mode = config.get("copy_mode")
+    originals = storage.originals_dir(event_id)
+    
+    for item in matches:
+        photo = item["photo"]
+        src = originals / photo
+        dst = out_dir / photo
+        if src.exists() and not dst.exists():
+            try:
+                if copy_mode == "hardlink":
+                    try:
+                        os.link(src, dst)
+                    except OSError:
+                        shutil.copy2(src, dst)
+                else:
+                    shutil.copy2(src, dst)
+            except Exception as e:
+                print(f"Error copying {photo} to output folder: {e}")
+
+
 def match_person(event_id, person_id, threshold=None):
     if threshold is None:
         threshold = float(config.get("threshold"))
@@ -228,4 +267,11 @@ def match_person(event_id, person_id, threshold=None):
 
     # Sort descending
     matches.sort(key=lambda m: m["score"], reverse=True)
+
+    # Sync output folder on disk
+    try:
+        sync_output_folder(event_id, person_id, matches)
+    except Exception as e:
+        print(f"Error syncing output folder: {e}")
+
     return matches
