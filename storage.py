@@ -18,6 +18,7 @@
         results.json          what the last run found
 """
 
+import hashlib
 import json
 import re
 import shutil
@@ -26,7 +27,35 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from config import EVENTS_DIR, ensure_dirs
+from config import EVENTS_DIR, ensure_dirs, DATA_ROOT
+
+USERS_FILE = DATA_ROOT / "users.json"
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def get_users() -> dict:
+    if not USERS_FILE.exists():
+        import config
+        admin_user = config.get("admin_username")
+        admin_pass = config.get("admin_password")
+        users = {admin_user: hash_password(admin_pass)}
+        write_json(USERS_FILE, users)
+        return users
+    return read_json(USERS_FILE, {})
+
+def create_user(username: str, password: str):
+    users = get_users()
+    if username in users:
+        raise ValueError("User already exists")
+    users[username] = hash_password(password)
+    write_json(USERS_FILE, users)
+
+def verify_user(username: str, password: str) -> bool:
+    users = get_users()
+    if username not in users:
+        return False
+    return users[username] == hash_password(password)
 
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".heif"}
 

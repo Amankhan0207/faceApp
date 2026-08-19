@@ -56,7 +56,7 @@ SESSION_TOKEN = "facesort_session_active"
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path in ["/api/login", "/api/logout", "/favicon.ico"]:
+    if path in ["/api/login", "/api/logout", "/api/register", "/favicon.ico"]:
         return await call_next(request)
     session_token = request.cookies.get("session_token")
     is_auth = (session_token == SESSION_TOKEN)
@@ -90,11 +90,13 @@ class LoginIn(BaseModel):
     username: str
     password: str
 
+class RegisterIn(BaseModel):
+    username: str
+    password: str
+
 @app.post("/api/login")
 def login(body: LoginIn, response: Response):
-    expected_user = config.get("admin_username")
-    expected_pass = config.get("admin_password")
-    if body.username == expected_user and body.password == expected_pass:
+    if storage.verify_user(body.username, body.password):
         response.set_cookie(
             key="session_token",
             value=SESSION_TOKEN,
@@ -105,9 +107,22 @@ def login(body: LoginIn, response: Response):
         return {"detail": "Authenticated"}
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
+@app.post("/api/register")
+def register(body: RegisterIn):
+    username = body.username.strip()
+    password = body.password.strip()
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="Username and password cannot be empty")
+    try:
+        storage.create_user(username, password)
+        return {"detail": "Account created successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 @app.post("/api/logout")
 def logout(response: Response):
     response.delete_cookie(key="session_token")
+    return {"detail": "Logged out"}
     return {"detail": "Logged out"}
 
 

@@ -4,7 +4,7 @@ def get_login_html():
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FaceSort - Login</title>
+<title>FaceSort - Login / Register</title>
 <style>
 :root {
   --ink: #101318;
@@ -16,6 +16,7 @@ def get_login_html():
   --faint: #545c6a;
   --amber: #f5a524;
   --red: #e5484d;
+  --green: #3fbf7f;
   --radius: 8px;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -77,7 +78,7 @@ body::after {
 
 .brand {
   text-align: center;
-  margin-bottom: 30px;
+  margin-bottom: 26px;
 }
 .brand h1 {
   font-size: 26px;
@@ -170,6 +171,36 @@ body::after {
   animation: fadeIn 0.3s ease;
 }
 
+.success-note {
+  background: rgba(63, 191, 127, 0.1);
+  border: 1px solid rgba(63, 191, 127, 0.35);
+  color: #8fdcb4;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  margin-bottom: 20px;
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+
+.toggle-mode {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 13px;
+  color: var(--dim);
+}
+.toggle-mode a {
+  color: var(--amber);
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.toggle-mode a:hover {
+  color: #ffb838;
+  text-decoration: underline;
+}
+
 @keyframes slideUp {
   to {
     opacity: 1;
@@ -190,12 +221,13 @@ body::after {
 <div class="login-container">
   <div class="brand">
     <h1>Face<span>Sort</span></h1>
-    <p>Sign in to manage your workspace</p>
+    <p id="brandText">Sign in to manage your workspace</p>
   </div>
   
   <div class="error-note" id="errorBlock"></div>
+  <div class="success-note" id="successBlock"></div>
   
-  <form id="loginForm">
+  <form id="authForm">
     <div class="form-group">
       <label for="username">Username</label>
       <input type="text" id="username" required autocomplete="username" autofocus>
@@ -211,38 +243,109 @@ body::after {
       <span id="btnText">Sign In</span>
     </button>
   </form>
+  
+  <div class="toggle-mode" id="toggleBlock">
+    Don't have an account? <a id="toggleBtn">Create one</a>
+  </div>
 </div>
 
 <script>
-const form = document.getElementById("loginForm");
+const form = document.getElementById("authForm");
 const submitBtn = document.getElementById("submitBtn");
 const btnText = document.getElementById("btnText");
 const spinner = document.getElementById("spinner");
 const errorBlock = document.getElementById("errorBlock");
+const successBlock = document.getElementById("successBlock");
+const brandText = document.getElementById("brandText");
+const toggleBtn = document.getElementById("toggleBtn");
+const toggleBlock = document.getElementById("toggleBlock");
+
+let isLoginMode = true;
+
+toggleBtn.addEventListener("click", () => {
+  // Toggle state
+  isLoginMode = !isLoginMode;
+  
+  // Clear any existing alerts
+  errorBlock.style.display = "none";
+  successBlock.style.display = "none";
+  
+  if (isLoginMode) {
+    brandText.textContent = "Sign in to manage your workspace";
+    btnText.textContent = "Sign In";
+    toggleBlock.innerHTML = `Don't have an account? <a id="toggleBtn">Create one</a>`;
+  } else {
+    brandText.textContent = "Create a new account to get started";
+    btnText.textContent = "Register";
+    toggleBlock.innerHTML = `Already have an account? <a id="toggleBtn">Sign in</a>`;
+  }
+  
+  // Re-bind the click listener because innerHTML wipes the children elements
+  document.getElementById("toggleBtn").addEventListener("click", arguments.callee);
+  
+  document.getElementById("username").focus();
+});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   
-  // Reset state
+  // Reset alerts & submit button state
   errorBlock.style.display = "none";
+  successBlock.style.display = "none";
   submitBtn.disabled = true;
   spinner.style.display = "block";
-  btnText.textContent = "Signing In...";
+  btnText.textContent = isLoginMode ? "Signing In..." : "Creating Account...";
   
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
   
+  const endpoint = isLoginMode ? "/api/login" : "/api/register";
+  
   try {
-    const res = await fetch("/api/login", {
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ username, password })
     });
     
     if (res.ok) {
-      window.location.reload();
+      if (isLoginMode) {
+        window.location.reload();
+      } else {
+        // Registration success
+        successBlock.textContent = "Account created successfully! You can now sign in.";
+        successBlock.style.display = "block";
+        
+        // Reset form controls
+        document.getElementById("password").value = "";
+        
+        // Go back to login mode automatically
+        isLoginMode = true;
+        brandText.textContent = "Sign in to manage your workspace";
+        btnText.textContent = "Sign In";
+        toggleBlock.innerHTML = `Don't have an account? <a id="toggleBtn">Create one</a>`;
+        document.getElementById("toggleBtn").addEventListener("click", () => {
+          isLoginMode = !isLoginMode;
+          errorBlock.style.display = "none";
+          successBlock.style.display = "none";
+          if (isLoginMode) {
+            brandText.textContent = "Sign in to manage your workspace";
+            btnText.textContent = "Sign In";
+            toggleBlock.innerHTML = `Don't have an account? <a id="toggleBtn">Create one</a>`;
+          } else {
+            brandText.textContent = "Create a new account to get started";
+            btnText.textContent = "Register";
+            toggleBlock.innerHTML = `Already have an account? <a id="toggleBtn">Sign in</a>`;
+          }
+          document.getElementById("toggleBtn").addEventListener("click", arguments.callee);
+          document.getElementById("username").focus();
+        });
+        
+        submitBtn.disabled = false;
+        spinner.style.display = "none";
+      }
     } else {
-      let detail = "Invalid username or password";
+      let detail = isLoginMode ? "Invalid username or password" : "Failed to create account";
       try {
         const err = await res.json();
         detail = err.detail || detail;
@@ -254,7 +357,7 @@ form.addEventListener("submit", async (e) => {
     errorBlock.style.display = "block";
     submitBtn.disabled = false;
     spinner.style.display = "none";
-    btnText.textContent = "Sign In";
+    btnText.textContent = isLoginMode ? "Sign In" : "Register";
   }
 });
 </script>
