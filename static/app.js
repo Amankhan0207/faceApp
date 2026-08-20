@@ -1111,12 +1111,20 @@ async function openUsers() {
     // Wire up form submit
     $("addUserForm").onsubmit = async (e) => {
       e.preventDefault();
+      const password = $("new_password").value;
+      const hasUpper = /[A-Z]/.test(password);
+      const hasDigit = /[0-9]/.test(password);
+      const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+      if (password.length < 8 || !hasUpper || !hasDigit || !hasSpecial) {
+        toast("Password must be at least 8 characters long and contain at least one capital letter (A-Z), one number (0-9), and one special character (e.g. @, #, $, %).", true);
+        return;
+      }
       try {
         await api("/users", {
           method: "POST",
           body: JSON.stringify({
             username: $("new_username").value,
-            password: $("new_password").value,
+            password: password,
             name: $("new_name").value,
             email: $("new_email").value,
             mobile: $("new_mobile").value,
