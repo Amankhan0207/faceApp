@@ -90,7 +90,10 @@ async def auth_middleware(request: Request, call_next):
     if path in ["/", "/index.html"]:
         if not is_auth:
             g_client_id = config.get("google_client_id") or ""
-            html = login_template.get_login_html().replace("{{GOOGLE_CLIENT_ID}}", g_client_id)
+            smtp_configured = "true" if (config.get("smtp_user") and config.get("smtp_password")) else "false"
+            html = login_template.get_login_html()
+            html = html.replace("{{GOOGLE_CLIENT_ID}}", g_client_id)
+            html = html.replace("{{IS_SMTP_CONFIGURED}}", smtp_configured)
             return HTMLResponse(content=html)
             
     # User isolation: intercept user-specific event requests
@@ -218,14 +221,20 @@ def register(body: RegisterIn):
     
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password cannot be empty")
-    if not email or not otp:
-        raise HTTPException(status_code=400, detail="Email and OTP are required for registration")
-        
-    pending = _pending_otps.get(email)
-    if not pending or pending["expires_at"] < time.time() or pending["otp"] != otp:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-        
-    _pending_otps.pop(email, None)
+    # Only verify OTP if SMTP is configured
+    user_smtp = config.get("smtp_user")
+    password_smtp = config.get("smtp_password")
+    smtp_enabled = bool(user_smtp and password_smtp)
+    
+    if smtp_enabled:
+        if not email or not otp:
+            raise HTTPException(status_code=400, detail="Email and OTP are required for registration")
+            
+        pending = _pending_otps.get(email)
+        if not pending or pending["expires_at"] < time.time() or pending["otp"] != otp:
+            raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+            
+        _pending_otps.pop(email, None)
     
     try:
         storage.create_user_full(
