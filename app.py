@@ -206,6 +206,17 @@ def login(body: LoginIn, response: Response):
         return {"detail": "Authenticated"}
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
+def validate_password_strength(password: str):
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    if not any(c.isupper() for c in password):
+        raise ValueError("Password must contain at least one uppercase letter (capital letter)")
+    if not any(c.isdigit() for c in password):
+        raise ValueError("Password must contain at least one number")
+    import re
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        raise ValueError("Password must contain at least one special character (e.g. @, #, $, %)")
+
 @app.post("/api/register")
 def register(body: RegisterIn):
     import time
@@ -216,6 +227,10 @@ def register(body: RegisterIn):
     
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password cannot be empty")
+    try:
+        validate_password_strength(password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if not email or not otp:
         raise HTTPException(status_code=400, detail="Email and OTP are required for registration")
         
@@ -324,6 +339,10 @@ def admin_create_user(body: CreateUserIn, request: Request):
     usertype = body.usertype.strip()
     if not username or not password or not usertype:
         raise HTTPException(status_code=400, detail="Username, password, and usertype are required")
+    try:
+        validate_password_strength(password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     if usertype not in ["super_admin", "admin", "member"]:
         raise HTTPException(status_code=400, detail="Invalid usertype")
     try:

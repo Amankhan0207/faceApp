@@ -382,6 +382,16 @@ form.addEventListener("submit", async (e) => {
     const fullname = document.getElementById("fullname").value;
     const mobile = document.getElementById("mobile").value;
     
+    // Password strength check
+    const hasUpper = /[A-Z]/.test(password);
+    const hasDigit = /[0-9]/.test(password);
+    const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+    if (password.length < 8 || !hasUpper || !hasDigit || !hasSpecial) {
+      errorBlock.textContent = "Password must be at least 8 characters long and contain at least one capital letter (A-Z), one number (0-9), and one special character (e.g. @, #, $, %).";
+      errorBlock.style.display = "block";
+      return;
+    }
+    
     if (!otpSent) {
       // Step 1: Send OTP
       submitBtn.disabled = true;
