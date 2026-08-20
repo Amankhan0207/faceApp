@@ -39,23 +39,67 @@ def get_users() -> dict:
     admin_user = config.get("admin_username")
     admin_pass = config.get("admin_password")
     users = read_json(USERS_FILE, {})
+    modified = False
+    
+    # Migrate old string password hashes to dict format
+    for username, data in list(users.items()):
+        if isinstance(data, str):
+            users[username] = {
+                "password_hash": data,
+                "name": "Default Admin" if username == admin_user else username,
+                "email": "admin@example.com" if username == admin_user else "",
+                "mobile": "",
+                "usertype": "super_admin" if username == admin_user else "member"
+            }
+            modified = True
+            
+    # Ensure default admin always exists
     if admin_user not in users:
-        users[admin_user] = hash_password(admin_pass)
+        users[admin_user] = {
+            "password_hash": hash_password(admin_pass),
+            "name": "Super Admin",
+            "email": "admin@example.com",
+            "mobile": "",
+            "usertype": "super_admin"
+        }
+        modified = True
+        
+    if modified:
         write_json(USERS_FILE, users)
+        
     return users
 
 def create_user(username: str, password: str):
+    create_user_full(username, password, name="", email="", mobile="", usertype="member")
+
+def create_user_full(username: str, password: str, name: str, email: str, mobile: str, usertype: str):
     users = get_users()
     if username in users:
         raise ValueError("User already exists")
-    users[username] = hash_password(password)
+    users[username] = {
+        "password_hash": hash_password(password),
+        "name": name,
+        "email": email,
+        "mobile": mobile,
+        "usertype": usertype
+    }
+    write_json(USERS_FILE, users)
+
+def delete_user(username: str):
+    users = get_users()
+    if username not in users:
+        raise ValueError("User not found")
+    del users[username]
     write_json(USERS_FILE, users)
 
 def verify_user(username: str, password: str) -> bool:
     users = get_users()
     if username not in users:
         return False
-    return users[username] == hash_password(password)
+    user_data = users[username]
+    if isinstance(user_data, str):
+        return user_data == hash_password(password)
+    return user_data.get("password_hash") == hash_password(password)
 
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".heif"}
 

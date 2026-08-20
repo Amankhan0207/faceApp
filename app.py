@@ -62,9 +62,19 @@ def get_current_user(request: Request) -> str | None:
             return username
     return None
 
-def is_super_admin(request: Request) -> bool:
+def get_user_role(request: Request) -> str | None:
     user = get_current_user(request)
-    return user == config.get("admin_username")
+    if not user:
+        return None
+    users = storage.get_users()
+    return users.get(user, {}).get("usertype")
+
+def is_admin_or_super(request: Request) -> bool:
+    role = get_user_role(request)
+    return role in ["super_admin", "admin"]
+
+def is_super_admin(request: Request) -> bool:
+    return get_user_role(request) == "super_admin"
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
@@ -106,6 +116,17 @@ class LoginIn(BaseModel):
 class RegisterIn(BaseModel):
     username: str
     password: str
+    name: str = ""
+    email: str = ""
+    mobile: str = ""
+
+class CreateUserIn(BaseModel):
+    username: str
+    password: str
+    name: str
+    email: str
+    mobile: str
+    usertype: str
 
 @app.post("/api/login")
 def login(body: LoginIn, response: Response):
@@ -127,7 +148,14 @@ def register(body: RegisterIn):
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password cannot be empty")
     try:
-        storage.create_user(username, password)
+        storage.create_user_full(
+            username=username,
+            password=password,
+            name=body.name.strip(),
+            email=body.email.strip(),
+            mobile=body.mobile.strip(),
+            usertype="member"
+        )
         return {"detail": "Account created successfully"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -136,7 +164,60 @@ def register(body: RegisterIn):
 def logout(response: Response):
     response.delete_cookie(key="session_token")
     return {"detail": "Logged out"}
-    return {"detail": "Logged out"}
+
+# ---------------------------------------------------------------- user management
+
+@app.get("/api/users")
+def list_users(request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(status_code=403, detail="Only Super Admin can view user list")
+    users = storage.get_users()
+    return [
+        {
+            "username": username,
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "mobile": u.get("mobile", ""),
+            "usertype": u.get("usertype", "member")
+        }
+        for username, u in users.items()
+    ]
+
+@app.post("/api/users")
+def admin_create_user(body: CreateUserIn, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(status_code=403, detail="Only Super Admin can create users")
+    username = body.username.strip()
+    password = body.password.strip()
+    usertype = body.usertype.strip()
+    if not username or not password or not usertype:
+        raise HTTPException(status_code=400, detail="Username, password, and usertype are required")
+    if usertype not in ["super_admin", "admin", "member"]:
+        raise HTTPException(status_code=400, detail="Invalid usertype")
+    try:
+        storage.create_user_full(
+            username=username,
+            password=password,
+            name=body.name.strip(),
+            email=body.email.strip(),
+            mobile=body.mobile.strip(),
+            usertype=usertype
+        )
+        return {"detail": "User created successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/users/{username}")
+def delete_user(username: str, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(status_code=403, detail="Only Super Admin can delete users")
+    if username == config.get("admin_username"):
+        raise HTTPException(status_code=400, detail="Cannot delete default Super Admin account")
+    try:
+        storage.delete_user(username)
+        return {"detail": "User deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 # ---------------------------------------------------------------- settings
@@ -163,14 +244,15 @@ def read_settings(request: Request):
         "active_device": engine.resolve_device(settings["device"]),
         "data_root": str(config.DATA_ROOT),
         "heic": engine.HEIC_OK,
-        "is_admin": is_super_admin(request),
+        "is_admin": is_admin_or_super(request),
+        "is_super_admin": is_super_admin(request),
     }
 
 
 @app.put("/api/settings")
 def write_settings(patch: SettingsPatch, request: Request):
-    if not is_super_admin(request):
-        raise HTTPException(status_code=403, detail="Only Super Admin can modify settings")
+    if not is_admin_or_super(request):
+        raise HTTPException(status_code=403, detail="Only Admins can modify settings")
     values = {k: v for k, v in patch.model_dump().items() if v is not None}
     if "threshold" in values:
         values["threshold"] = max(0.1, min(0.95, float(values["threshold"])))
@@ -202,8 +284,8 @@ def get_one_event(event_id: str):
 
 @app.post("/api/events/{event_id}/reset")
 def reset_workspace(event_id: str, request: Request):
-    if not is_super_admin(request):
-        raise HTTPException(status_code=403, detail="Only Super Admin can reset workspace")
+    if not is_admin_or_super(request):
+        raise HTTPException(status_code=403, detail="Only Admins can reset workspace")
     if event_id != "workspace":
         raise HTTPException(400, "Only the 'workspace' event is supported.")
     # Cancel any running job

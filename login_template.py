@@ -63,7 +63,7 @@ body::after {
 
 .login-container {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   background: rgba(23, 27, 34, 0.75);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -237,6 +237,22 @@ body::after {
       <label for="password">Password</label>
       <input type="password" id="password" required autocomplete="current-password">
     </div>
+
+    <!-- Registration Fields -->
+    <div class="form-group register-only" style="display: none;">
+      <label for="fullname">Full Name</label>
+      <input type="text" id="fullname" autocomplete="name">
+    </div>
+
+    <div class="form-group register-only" style="display: none;">
+      <label for="email">Email</label>
+      <input type="email" id="email" autocomplete="email">
+    </div>
+
+    <div class="form-group register-only" style="display: none;">
+      <label for="mobile">Mobile No</label>
+      <input type="text" id="mobile" autocomplete="tel">
+    </div>
     
     <button type="submit" class="btn" id="submitBtn">
       <span class="spinner" id="spinner"></span>
@@ -259,6 +275,7 @@ const successBlock = document.getElementById("successBlock");
 const brandText = document.getElementById("brandText");
 const toggleText = document.getElementById("toggleText");
 const toggleBtn = document.getElementById("toggleBtn");
+const registerFields = document.querySelectorAll(".register-only");
 
 let isLoginMode = true;
 
@@ -270,6 +287,15 @@ function setMode(loginMode) {
   if (!isLoginMode) {
     successBlock.style.display = "none";
   }
+  
+  // Show or hide register-only fields
+  registerFields.forEach(field => {
+    field.style.display = isLoginMode ? "none" : "block";
+    const input = field.querySelector("input");
+    if (input) {
+      input.required = !isLoginMode;
+    }
+  });
   
   if (isLoginMode) {
     brandText.textContent = "Sign in to manage your workspace";
@@ -303,13 +329,21 @@ form.addEventListener("submit", async (e) => {
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
   
+  const bodyData = { username, password };
+  
+  if (!isLoginMode) {
+    bodyData.name = document.getElementById("fullname").value;
+    bodyData.email = document.getElementById("email").value;
+    bodyData.mobile = document.getElementById("mobile").value;
+  }
+  
   const endpoint = isLoginMode ? "/api/login" : "/api/register";
   
   try {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify(bodyData)
     });
     
     if (res.ok) {
@@ -320,8 +354,11 @@ form.addEventListener("submit", async (e) => {
         successBlock.textContent = "Account created successfully! You can now sign in.";
         successBlock.style.display = "block";
         
-        // Reset form password
+        // Reset form inputs
         document.getElementById("password").value = "";
+        document.getElementById("fullname").value = "";
+        document.getElementById("email").value = "";
+        document.getElementById("mobile").value = "";
         
         // Go back to login mode automatically
         setMode(true);

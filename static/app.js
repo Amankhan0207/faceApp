@@ -116,9 +116,13 @@ async function boot() {
     $("resetWorkspace").style.display = "none";
     $("openSettings").style.display = "none";
   }
+  if (!S.isSuperAdmin) {
+    $("openUsers").style.display = "none";
+  }
 
   $("resetWorkspace").onclick = resetWorkspace;
   $("openSettings").onclick = openSettings;
+  $("openUsers").onclick = openUsers;
   $("logoutBtn").onclick = logout;
 
   await loadPhotos();
@@ -136,6 +140,7 @@ async function loadSettings() {
   S.dataRoot = data.data_root;
   S.heic = data.heic;
   S.isAdmin = data.is_admin;
+  S.isSuperAdmin = data.is_super_admin;
   const names = { cpu: "CPU", cuda: "GPU (CUDA)", coreml: "GPU (Apple)" };
   $("deviceTag").textContent = "Running on " + (names[S.activeDevice] || S.activeDevice);
 }
@@ -917,6 +922,167 @@ function openSettings() {
       toast(err.message, true);
     }
   };
+}
+
+async function openUsers() {
+  let usersList = [];
+  try {
+    usersList = await api("/users");
+  } catch (err) {
+    toast(err.message, true);
+    return;
+  }
+
+  const renderUsersBody = () => {
+    return `
+      <div class="sheet">
+        <div class="sheet-inner" style="max-width: 600px;">
+          <div class="sheet-head">
+            <h3>User Management</h3>
+            <button class="btn ghost sm" id="closeSheet">Close</button>
+          </div>
+          <div class="sheet-body">
+            <!-- Add User Form -->
+            <div class="card" style="margin-bottom: 20px; padding: 16px; background: var(--raise); border: 1px solid var(--line);">
+              <h4 style="margin-bottom: 12px; font-size: 14px; font-weight: 600; text-transform: uppercase; color: var(--amber);">Add New User</h4>
+              <form id="addUserForm" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new_username" style="display: block; font-size: 10px; font-weight: 700; color: var(--dim); margin-bottom: 4px;">Username</label>
+                  <input class="input" type="text" id="new_username" required style="width: 100%; padding: 8px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new_password" style="display: block; font-size: 10px; font-weight: 700; color: var(--dim); margin-bottom: 4px;">Password</label>
+                  <input class="input" type="password" id="new_password" required style="width: 100%; padding: 8px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new_name" style="display: block; font-size: 10px; font-weight: 700; color: var(--dim); margin-bottom: 4px;">Full Name</label>
+                  <input class="input" type="text" id="new_name" required style="width: 100%; padding: 8px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new_email" style="display: block; font-size: 10px; font-weight: 700; color: var(--dim); margin-bottom: 4px;">Email</label>
+                  <input class="input" type="email" id="new_email" style="width: 100%; padding: 8px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new_mobile" style="display: block; font-size: 10px; font-weight: 700; color: var(--dim); margin-bottom: 4px;">Mobile No</label>
+                  <input class="input" type="text" id="new_mobile" style="width: 100%; padding: 8px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="new_usertype" style="display: block; font-size: 10px; font-weight: 700; color: var(--dim); margin-bottom: 4px;">User Type</label>
+                  <select class="input" id="new_usertype" style="width: 100%; padding: 8px;">
+                    <option value="member">Member</option>
+                    <option value="admin">Admin</option>
+                    <option value="super_admin">Super Admin</option>
+                  </select>
+                </div>
+                <div style="grid-column: span 2; margin-top: 8px;">
+                  <button type="submit" class="btn primary sm" style="width: 100%;">Create Account</button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Users List Table -->
+            <h4 style="margin-bottom: 12px; font-size: 14px; font-weight: 600;">Registered Users</h4>
+            <div style="overflow-x: auto;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                <thead>
+                  <tr style="border-bottom: 2px solid var(--line); text-align: left; color: var(--dim);">
+                    <th style="padding: 8px;">Username</th>
+                    <th style="padding: 8px;">Name</th>
+                    <th style="padding: 8px;">Role</th>
+                    <th style="padding: 8px;">Email</th>
+                    <th style="padding: 8px;">Mobile</th>
+                    <th style="padding: 8px; text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${usersList.map(u => {
+                    const badgeStyles = {
+                      super_admin: "background: rgba(245, 165, 36, 0.15); color: var(--amber); border: 1px solid rgba(245, 165, 36, 0.3);",
+                      admin: "background: rgba(63, 191, 127, 0.15); color: var(--green); border: 1px solid rgba(63, 191, 127, 0.3);",
+                      member: "background: rgba(125, 134, 149, 0.15); color: var(--dim); border: 1px solid rgba(125, 134, 149, 0.3);"
+                    };
+                    const roleLabel = {
+                      super_admin: "Super Admin",
+                      admin: "Admin",
+                      member: "Member"
+                    };
+                    const style = badgeStyles[u.usertype] || badgeStyles.member;
+                    const label = roleLabel[u.usertype] || u.usertype;
+                    
+                    return `
+                      <tr style="border-bottom: 1px solid var(--line);">
+                        <td style="padding: 8px; font-weight: 600;">${esc(u.username)}</td>
+                        <td style="padding: 8px;">${esc(u.name || "-")}</td>
+                        <td style="padding: 8px;">
+                          <span style="display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; ${style}">
+                            ${esc(label)}
+                          </span>
+                        </td>
+                        <td style="padding: 8px; color: var(--dim);">${esc(u.email || "-")}</td>
+                        <td style="padding: 8px; color: var(--dim);">${esc(u.mobile || "-")}</td>
+                        <td style="padding: 8px; text-align: right;">
+                          ${u.username === "admin" ? "" : `<button class="btn danger sm deleteUserBtn" data-username="${esc(u.username)}" style="padding: 4px 8px; font-size: 11px;">Delete</button>`}
+                        </td>
+                      </tr>
+                    `;
+                  }).join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  };
+
+  const draw = () => {
+    $("sheet").innerHTML = renderUsersBody();
+    
+    const close = () => { $("sheet").innerHTML = ""; };
+    $("closeSheet").onclick = close;
+    document.querySelector(".sheet").onclick = (e) => { if (e.target.className === "sheet") close(); };
+    
+    // Wire up delete buttons
+    document.querySelectorAll(".deleteUserBtn").forEach(btn => {
+      btn.onclick = async (e) => {
+        const username = e.target.getAttribute("data-username");
+        if (!confirm(`Are you sure you want to delete user "${username}"?`)) return;
+        try {
+          await api(`/users/${encodeURIComponent(username)}`, { method: "DELETE" });
+          toast(`User ${username} deleted successfully`);
+          usersList = await api("/users");
+          draw();
+        } catch (err) {
+          toast(err.message, true);
+        }
+      };
+    });
+
+    // Wire up form submit
+    $("addUserForm").onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api("/users", {
+          method: "POST",
+          body: JSON.stringify({
+            username: $("new_username").value,
+            password: $("new_password").value,
+            name: $("new_name").value,
+            email: $("new_email").value,
+            mobile: $("new_mobile").value,
+            usertype: $("new_usertype").value
+          })
+        });
+        toast("User created successfully");
+        usersList = await api("/users");
+        draw();
+      } catch (err) {
+        toast(err.message, true);
+      }
+    };
+  };
+
+  draw();
 }
 
 boot();
