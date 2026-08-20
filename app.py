@@ -160,7 +160,7 @@ def send_otp_email(to_email: str, otp: str):
     
     print(f"\n========================================\n[EMAIL OTP] Code for {to_email} is: {otp}\n========================================\n", flush=True)
     if not user or not password:
-        return
+        raise ValueError("SMTP credentials are not configured on the server. Please ask the administrator to configure SMTP details in Settings.")
         
     try:
         msg = MIMEText(f"Your FaceSort registration verification code is: {otp}\nIt will expire in 5 minutes.")
@@ -173,7 +173,7 @@ def send_otp_email(to_email: str, otp: str):
             server.login(user, password)
             server.sendmail(user, [to_email], msg.as_string())
     except Exception as e:
-        print(f"Error sending SMTP mail: {e}", flush=True)
+        raise RuntimeError(f"SMTP error while sending email: {e}")
 
 @app.post("/api/register/send-otp")
 def send_register_otp(body: SendOtpIn):
@@ -187,15 +187,12 @@ def send_register_otp(body: SendOtpIn):
         "otp": otp,
         "expires_at": time.time() + 300
     }
-    send_otp_email(email, otp)
-    
-    user = config.get("smtp_user")
-    password = config.get("smtp_password")
-    if not user or not password:
-        return {
-            "detail": "OTP generated locally",
-            "otp": otp
-        }
+    try:
+        send_otp_email(email, otp)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return {"detail": "OTP sent successfully"}
 
 @app.post("/api/login")

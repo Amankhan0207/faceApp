@@ -418,12 +418,7 @@ form.addEventListener("submit", async (e) => {
         });
         if (res.ok) {
           otpSent = true;
-          const data = await res.json();
-          if (data.otp) {
-            successBlock.innerHTML = `Verification code (Local mode): <strong style="color:var(--amber); font-size:16px;">${data.otp}</strong><br>Enter it below to complete registration.`;
-          } else {
-            successBlock.textContent = "Verification code sent to your email. Check your inbox!";
-          }
+          successBlock.textContent = "Verification code sent to your email. Check your inbox!";
           successBlock.style.display = "block";
           otpOnlyField.style.display = "block";
           otpInput.required = true;
