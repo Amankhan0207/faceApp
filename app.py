@@ -188,6 +188,14 @@ def send_register_otp(body: SendOtpIn):
         "expires_at": time.time() + 300
     }
     send_otp_email(email, otp)
+    
+    user = config.get("smtp_user")
+    password = config.get("smtp_password")
+    if not user or not password:
+        return {
+            "detail": "OTP generated locally",
+            "otp": otp
+        }
     return {"detail": "OTP sent successfully"}
 
 @app.post("/api/login")
