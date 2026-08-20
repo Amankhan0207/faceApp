@@ -309,6 +309,7 @@ const otpInput = document.getElementById("otp");
 
 let isLoginMode = true;
 let otpSent = false;
+const isSmtpConfigured = {{IS_SMTP_CONFIGURED}};
 
 // Show Google sign-in if client ID is configured
 const gClientId = "{{GOOGLE_CLIENT_ID}}";
@@ -418,7 +419,11 @@ form.addEventListener("submit", async (e) => {
         });
         if (res.ok) {
           otpSent = true;
-          successBlock.textContent = "Verification code sent to your email. Check your inbox!";
+          if (isSmtpConfigured) {
+            successBlock.textContent = "Verification code sent to your email. Check your inbox!";
+          } else {
+            successBlock.innerHTML = "Verification code generated! <br><span style='color:var(--amber); font-weight:600;'>Check your server console terminal</span> to copy the OTP.";
+          }
           successBlock.style.display = "block";
           otpOnlyField.style.display = "block";
           otpInput.required = true;
