@@ -109,7 +109,7 @@ async function boot() {
     S.event = list[0];
   } catch (err) {
     toast("Failed to load workspace. Resetting...", true);
-    S.event = await api("/events/workspace/reset", { method: "POST" });
+    S.event = await api(`/events/${S.event ? S.event.id : 'workspace'}/reset`, { method: "POST" });
   }
 
   if (!S.isAdmin) {
@@ -126,7 +126,7 @@ async function boot() {
   $("logoutBtn").onclick = logout;
 
   await loadPhotos();
-  S.run = await api("/events/workspace/run");
+  S.run = await api(`/events/${S.event.id}/run`);
 
   startPolling();
   render();
@@ -142,16 +142,20 @@ async function loadSettings() {
   S.isAdmin = data.is_admin;
   S.isSuperAdmin = data.is_super_admin;
   S.googleClientId = data.google_client_id;
+  S.smtpHost = data.smtp_host;
+  S.smtpPort = data.smtp_port;
+  S.smtpUser = data.smtp_user;
+  S.smtpPassword = data.smtp_password;
   const names = { cpu: "CPU", cuda: "GPU (CUDA)", coreml: "GPU (Apple)" };
   $("deviceTag").textContent = "Running on " + (names[S.activeDevice] || S.activeDevice);
 }
 
 async function refreshEvent() {
-  S.event = await api("/events/workspace");
+  S.event = await api(`/events/${S.event.id}`);
 }
 
 async function loadPhotos() {
-  const data = await api("/events/workspace/photos?limit=500");
+  const data = await api(`/events/${S.event.id}/photos?limit=500`);
   S.photos = data.photos;
   S.photoTotal = data.total;
 }
@@ -160,7 +164,7 @@ async function resetWorkspace() {
   if (!confirm("Are you sure you want to delete everything in the current workspace? This cannot be undone.")) return;
   try {
     clearInterval(searchInterval);
-    S.event = await api("/events/workspace/reset", { method: "POST" });
+    S.event = await api(`/events/${S.event.id}/reset`, { method: "POST" });
     S.photos = [];
     S.photoTotal = 0;
     S.tab = "upload";
@@ -269,7 +273,7 @@ function renderUpload() {
 }
 
 function thumbTile(name) {
-  return `<div class="tile"><img loading="lazy" src="/api/events/workspace/photos/${encodeURIComponent(name)}?thumb=true" alt=""></div>`;
+  return `<div class="tile"><img loading="lazy" src="/api/events/${S.event.id}/photos/${encodeURIComponent(name)}?thumb=true" alt=""></div>`;
 }
 
 async function upload(files) {
@@ -301,7 +305,7 @@ async function upload(files) {
     chunkFiles.forEach((f) => form.append("files", f, f.name));
 
     try {
-      await uploadApi("/events/workspace/photos", form, (percentComplete) => {
+      await uploadApi(`/events/${S.event.id}/photos`, form, (percentComplete) => {
         const chunkUploaded = (percentComplete / 100) * chunkBytes;
         const totalUploaded = bytesUploadedBefore + chunkUploaded;
         const overallPercent = Math.min(99.9, (totalUploaded / totalSize) * 100);
@@ -387,7 +391,7 @@ function renderProcess() {
   $("startRun")?.addEventListener("click", startRun);
   $("stopRun")?.addEventListener("click", async () => {
     try {
-      await api("/events/workspace/run/stop", { method: "POST" });
+      await api(`/events/${S.event.id}/run/stop`, { method: "POST" });
     } catch (err) {
       toast(err.message, true);
     }
@@ -396,7 +400,7 @@ function renderProcess() {
 
 async function startRun() {
   try {
-    S.run = await api("/events/workspace/run", { method: "POST" });
+    S.run = await api(`/events/${S.event.id}/run`, { method: "POST" });
     startPolling();
     render();
   } catch (err) {
@@ -409,7 +413,7 @@ function startPolling() {
   S.poll = setInterval(async () => {
     try {
       const prevRunState = S.run?.state;
-      S.run = await api("/events/workspace/run");
+      S.run = await api(`/events/${S.event.id}/run`);
       updateHeaderStatus();
       if (S.tab === "process") {
         renderProcess();
@@ -459,7 +463,7 @@ function personCard(person) {
       <p class="hint" style="margin:14px 0 10px">Pick photos where ${esc(person.name)} is clearly visible.</p>
       <div class="grid">${S.photos.map((name) => `
         <button class="tile ${ui.photos?.has(name) ? "on" : ""}" data-photo="${person.id}|${esc(name)}">
-          <img loading="lazy" src="/api/events/workspace/photos/${encodeURIComponent(name)}?thumb=true" alt="">
+          <img loading="lazy" src="/api/events/${S.event.id}/photos/${encodeURIComponent(name)}?thumb=true" alt="">
         </button>`).join("")}</div>
       <div class="row" style="margin-top:14px">
         <button class="btn primary" data-scan="${person.id}" ${chosen ? "" : "disabled"}>
@@ -472,7 +476,7 @@ function personCard(person) {
       <p class="hint" style="margin:14px 0 4px">Click ${esc(person.name)}'s face in each photo. Ignore everyone else.</p>
       <div class="strip">${(ui.candidates || []).map((c) => `
         <button class="face ${ui.picks?.has(c.key) ? "on" : ""}" data-face="${person.id}|${esc(c.key)}">
-          <img src="/api/events/workspace/persons/${person.id}/crops/${encodeURIComponent(c.crop)}" alt="">
+          <img src="/api/events/${S.event.id}/persons/${person.id}/crops/${encodeURIComponent(c.crop)}" alt="">
           <div class="fmeta">${esc(c.photo.slice(0, 10))}</div>
         </button>`).join("")}</div>
       <div class="row" style="margin-top:14px">
@@ -513,7 +517,7 @@ function wirePeople() {
   on("cancel", (id) => { delete S.people[id]; renderPeople(); });
   on("drop", async (id) => {
     if (!confirm("Remove this person?")) return;
-    await api(`/events/workspace/persons/${id}`, { method: "DELETE" });
+    await api(`/events/${S.event.id}/persons/${id}`, { method: "DELETE" });
     delete S.people[id];
     await refreshEvent();
     renderPeople();
@@ -538,7 +542,7 @@ async function addPerson() {
   const input = $("personName");
   const name = input.value.trim();
   if (!name) return input.focus();
-  const person = await api("/events/workspace/persons", {
+  const person = await api(`/events/${S.event.id}/persons`, {
     method: "POST", body: JSON.stringify({ name }),
   });
   input.value = "";
@@ -552,7 +556,7 @@ async function scanFaces(personId, button) {
   button.disabled = true;
   button.textContent = "Finding faces...";
   try {
-    const data = await api(`/events/workspace/persons/${personId}/scan`, {
+    const data = await api(`/events/${S.event.id}/persons/${personId}/scan`, {
       method: "POST", body: JSON.stringify({ photos: [...ui.photos] }),
     });
     ui.mode = "faces";
@@ -570,7 +574,7 @@ async function saveReference(personId, button) {
   button.disabled = true;
   button.textContent = "Saving...";
   try {
-    await api(`/events/workspace/persons/${personId}/reference`, {
+    await api(`/events/${S.event.id}/persons/${personId}/reference`, {
       method: "POST", body: JSON.stringify({ picks: [...S.people[personId].picks] }),
     });
     delete S.people[personId];
@@ -643,7 +647,7 @@ async function renderView() {
       let coverHtml = `<div class="folder-placeholder-icon">📁</div>`;
       if (p.ready && p.refs && p.refs.length > 0) {
         const photoName = p.refs[0].split("::")[0];
-        coverHtml = `<img class="folder-cover" loading="lazy" src="/api/events/workspace/photos/${encodeURIComponent(photoName)}?thumb=true" alt="">`;
+        coverHtml = `<img class="folder-cover" loading="lazy" src="/api/events/${S.event.id}/photos/${encodeURIComponent(photoName)}?thumb=true" alt="">`;
       }
 
       return `
@@ -681,7 +685,7 @@ async function loadFolderMatchCount(personId) {
       metaEl.textContent = "No reference face";
       return;
     }
-    const data = await api(`/events/workspace/persons/${personId}/matches`);
+    const data = await api(`/events/${S.event.id}/persons/${personId}/matches`);
     const count = data.matches ? data.matches.length : 0;
     metaEl.textContent = `${count} photo${count === 1 ? "" : "s"}`;
   } catch (err) {
@@ -732,7 +736,7 @@ async function loadMatchesAndRender() {
     </div>`;
 
   try {
-    const data = await api(`/events/workspace/persons/${S.viewPersonId}/matches`);
+    const data = await api(`/events/${S.event.id}/persons/${S.viewPersonId}/matches`);
     const matches = data.matches;
     const matchMap = new Map(matches.map((m) => [m.photo, m.score]));
 
@@ -767,7 +771,7 @@ async function loadMatchesAndRender() {
 
           $("matchesGrid").innerHTML = foundMatches.map((m) => `
             <div class="tile">
-              <img loading="lazy" src="/api/events/workspace/photos/${encodeURIComponent(m.photo)}?thumb=true" alt="">
+              <img loading="lazy" src="/api/events/${S.event.id}/photos/${encodeURIComponent(m.photo)}?thumb=true" alt="">
               <span class="score"><span>${m.score.toFixed(2)}</span></span>
             </div>`).join("");
         }
@@ -896,6 +900,38 @@ function openSettings() {
             <input class="input" type="text" id="gclientid" value="${S.googleClientId || ""}" placeholder="Enter client ID..." style="min-width: 250px;">
           </div>
 
+          <div class="setting">
+            <div>
+              <label for="smtphost">SMTP Server</label>
+              <div class="desc">For sending verification codes (e.g. smtp.gmail.com).</div>
+            </div>
+            <input class="input" type="text" id="smtphost" value="${S.smtpHost || ""}" placeholder="smtp.gmail.com" style="min-width: 250px;">
+          </div>
+
+          <div class="setting">
+            <div>
+              <label for="smtpport">SMTP Port</label>
+              <div class="desc">Typically 587 (TLS) or 465 (SSL).</div>
+            </div>
+            <input class="input" type="number" id="smtpport" value="${S.smtpPort || 587}" style="min-width: 80px;">
+          </div>
+
+          <div class="setting">
+            <div>
+              <label for="smtpuser">SMTP Username / Email</label>
+              <div class="desc">Sender email address.</div>
+            </div>
+            <input class="input" type="text" id="smtpuser" value="${S.smtpUser || ""}" placeholder="sender@example.com" style="min-width: 250px;">
+          </div>
+
+          <div class="setting">
+            <div>
+              <label for="smtppass">SMTP Password</label>
+              <div class="desc">SMTP password or app-specific password.</div>
+            </div>
+            <input class="input" type="password" id="smtppass" value="${S.smtpPassword || ""}" placeholder="••••••••••••" style="min-width: 250px;">
+          </div>
+
           <div class="note">
             <div class="label" style="margin-bottom:4px">Data folder</div>
             <span class="num" style="font-size:11px;word-break:break-all">${esc(S.dataRoot)}</span>
@@ -922,6 +958,10 @@ function openSettings() {
           cache_embeddings: true, // forced for test harness
           copy_mode: "copy",     // forced for test harness
           google_client_id: $("gclientid").value,
+          smtp_host: $("smtphost").value,
+          smtp_port: +$("smtpport").value,
+          smtp_user: $("smtpuser").value,
+          smtp_password: $("smtppass").value,
         }),
       });
       await loadSettings();

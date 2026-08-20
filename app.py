@@ -79,7 +79,7 @@ def is_super_admin(request: Request) -> bool:
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path in ["/api/login", "/api/logout", "/api/register", "/api/auth/google", "/favicon.ico"]:
+    if path in ["/api/login", "/api/logout", "/api/register", "/api/register/send-otp", "/api/auth/google", "/favicon.ico"]:
         return await call_next(request)
     username = get_current_user(request)
     is_auth = (username is not None)
@@ -92,6 +92,19 @@ async def auth_middleware(request: Request, call_next):
             g_client_id = config.get("google_client_id") or ""
             html = login_template.get_login_html().replace("{{GOOGLE_CLIENT_ID}}", g_client_id)
             return HTMLResponse(content=html)
+            
+    # User isolation: intercept user-specific event requests
+    if path.startswith("/api/events/"):
+        parts = path.split("/")
+        if len(parts) >= 4:
+            event_id = parts[3]
+            if not is_auth:
+                return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
+            # Super Admin can access all workspaces, others can only access their own workspace
+            if get_user_role(request) != "super_admin":
+                if event_id != username:
+                    return JSONResponse(status_code=403, content={"detail": "You do not have permission to access this workspace"})
+                    
     return await call_next(request)
 
 
@@ -121,6 +134,7 @@ class RegisterIn(BaseModel):
     name: str = ""
     email: str = ""
     mobile: str = ""
+    otp: str = ""
 
 class CreateUserIn(BaseModel):
     username: str
@@ -129,6 +143,52 @@ class CreateUserIn(BaseModel):
     email: str
     mobile: str
     usertype: str
+
+class SendOtpIn(BaseModel):
+    email: str
+
+_pending_otps = {}
+
+def send_otp_email(to_email: str, otp: str):
+    import smtplib
+    from email.mime.text import MIMEText
+    
+    host = config.get("smtp_host")
+    port = config.get("smtp_port")
+    user = config.get("smtp_user")
+    password = config.get("smtp_password")
+    
+    print(f"\n========================================\n[EMAIL OTP] Code for {to_email} is: {otp}\n========================================\n", flush=True)
+    if not user or not password:
+        return
+        
+    try:
+        msg = MIMEText(f"Your FaceSort registration verification code is: {otp}\nIt will expire in 5 minutes.")
+        msg["Subject"] = "FaceSort Registration OTP"
+        msg["From"] = user
+        msg["To"] = to_email
+        
+        with smtplib.SMTP(host, port) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(user, [to_email], msg.as_string())
+    except Exception as e:
+        print(f"Error sending SMTP mail: {e}", flush=True)
+
+@app.post("/api/register/send-otp")
+def send_register_otp(body: SendOtpIn):
+    import random
+    import time
+    email = body.email.strip()
+    if not email:
+        raise HTTPException(400, "Email address is required")
+    otp = f"{random.randint(100000, 999999)}"
+    _pending_otps[email] = {
+        "otp": otp,
+        "expires_at": time.time() + 300
+    }
+    send_otp_email(email, otp)
+    return {"detail": "OTP sent successfully"}
 
 @app.post("/api/login")
 def login(body: LoginIn, response: Response):
@@ -145,16 +205,29 @@ def login(body: LoginIn, response: Response):
 
 @app.post("/api/register")
 def register(body: RegisterIn):
+    import time
     username = body.username.strip()
     password = body.password.strip()
+    email = body.email.strip()
+    otp = body.otp.strip()
+    
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password cannot be empty")
+    if not email or not otp:
+        raise HTTPException(status_code=400, detail="Email and OTP are required for registration")
+        
+    pending = _pending_otps.get(email)
+    if not pending or pending["expires_at"] < time.time() or pending["otp"] != otp:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        
+    _pending_otps.pop(email, None)
+    
     try:
         storage.create_user_full(
             username=username,
             password=password,
             name=body.name.strip(),
-            email=body.email.strip(),
+            email=email,
             mobile=body.mobile.strip(),
             usertype="member"
         )
@@ -289,6 +362,10 @@ class SettingsPatch(BaseModel):
     thumb_size: int | None = None
     copy_mode: str | None = None
     google_client_id: str | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
+    smtp_user: str | None = None
+    smtp_password: str | None = None
 
 
 @app.get("/api/settings")
@@ -304,6 +381,10 @@ def read_settings(request: Request):
         "is_admin": is_admin_or_super(request),
         "is_super_admin": is_super_admin(request),
         "google_client_id": settings.get("google_client_id", ""),
+        "smtp_host": settings.get("smtp_host", ""),
+        "smtp_port": settings.get("smtp_port", 587),
+        "smtp_user": settings.get("smtp_user", ""),
+        "smtp_password": settings.get("smtp_password", ""),
     }
 
 
@@ -325,11 +406,15 @@ def write_settings(patch: SettingsPatch, request: Request):
 # ---------------------------------------------------------------- events (workspace-only)
 
 @app.get("/api/events")
-def get_events():
-    # Maintain compatibility with boot checks by returning list with only workspace
-    workspace = storage.get_event("workspace")
+def get_events(request: Request):
+    username = get_current_user(request)
+    if not username:
+        raise HTTPException(401, "Not authenticated")
+    workspace = storage.get_event(username)
     if not workspace:
-        workspace = storage.create_event("Workspace", "workspace")
+        users = storage.get_users()
+        fullname = users.get(username, {}).get("name", username.capitalize())
+        workspace = storage.create_event(f"{fullname}'s Workspace", username)
     return [workspace]
 
 

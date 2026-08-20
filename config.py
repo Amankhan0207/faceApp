@@ -30,6 +30,10 @@ DEFAULTS = {
     "admin_username": "admin",
     "admin_password": "admin123",
     "google_client_id": "",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_user": "",
+    "smtp_password": "",
 }
 
 _lock = threading.Lock()

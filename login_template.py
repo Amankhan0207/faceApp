@@ -254,6 +254,12 @@ body::after {
       <label for="mobile">Mobile No</label>
       <input type="text" id="mobile" autocomplete="tel">
     </div>
+
+    <!-- OTP Field -->
+    <div class="form-group otp-only" style="display: none;">
+      <label for="otp" style="color: var(--amber);">Enter OTP Verification Code</label>
+      <input type="text" id="otp" placeholder="Enter 6-digit code..." style="border-color: var(--amber);">
+    </div>
     
     <button type="submit" class="btn" id="submitBtn">
       <span class="spinner" id="spinner"></span>
@@ -298,17 +304,21 @@ const toggleText = document.getElementById("toggleText");
 const toggleBtn = document.getElementById("toggleBtn");
 const registerFields = document.querySelectorAll(".register-only");
 const googleAuthSection = document.getElementById("googleAuthSection");
+const otpOnlyField = document.querySelector(".otp-only");
+const otpInput = document.getElementById("otp");
 
 let isLoginMode = true;
+let otpSent = false;
 
 // Show Google sign-in if client ID is configured
 const gClientId = "{{GOOGLE_CLIENT_ID}}";
-if (gClientId && gClientId.trim() !== "" && gClientId.trim() !== "{"+"g_client_id"+"}" && gClientId.indexOf("{{") === -1) {
+if (gClientId && gClientId.trim() !== "" && gClientId.indexOf("{{") === -1) {
   googleAuthSection.style.display = "block";
 }
 
 function setMode(loginMode) {
   isLoginMode = loginMode;
+  otpSent = false;
   
   // Clear any existing alerts
   errorBlock.style.display = "none";
@@ -321,6 +331,11 @@ function setMode(loginMode) {
       googleAuthSection.style.display = "block";
     }
   }
+  
+  // Hide OTP field
+  otpOnlyField.style.display = "none";
+  otpInput.required = false;
+  otpInput.value = "";
   
   // Show or hide register-only fields
   registerFields.forEach(field => {
@@ -338,7 +353,7 @@ function setMode(loginMode) {
     toggleBtn.textContent = "Create one";
   } else {
     brandText.textContent = "Create a new account to get started";
-    btnText.textContent = "Register";
+    btnText.textContent = "Send OTP";
     toggleText.textContent = "Already have an account? ";
     toggleBtn.textContent = "Sign in";
   }
@@ -353,67 +368,113 @@ toggleBtn.addEventListener("click", () => {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   
-  // Reset alerts & submit button state
   errorBlock.style.display = "none";
   successBlock.style.display = "none";
-  submitBtn.disabled = true;
-  spinner.style.display = "block";
-  btnText.textContent = isLoginMode ? "Signing In..." : "Creating Account...";
   
   const username = document.getElementById("username").value;
   const password = document.getElementById("password").value;
   
-  const bodyData = { username, password };
-  
-  if (!isLoginMode) {
-    bodyData.name = document.getElementById("fullname").value;
-    bodyData.email = document.getElementById("email").value;
-    bodyData.mobile = document.getElementById("mobile").value;
-  }
-  
-  const endpoint = isLoginMode ? "/api/login" : "/api/register";
-  
-  try {
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(bodyData)
-    });
-    
-    if (res.ok) {
-      if (isLoginMode) {
+  if (isLoginMode) {
+    // Login flow
+    submitBtn.disabled = true;
+    spinner.style.display = "block";
+    btnText.textContent = "Signing In...";
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password })
+      });
+      if (res.ok) {
         window.location.reload();
       } else {
-        // Registration success
-        successBlock.textContent = "Account created successfully! You can now sign in.";
-        successBlock.style.display = "block";
-        
-        // Reset form inputs
-        document.getElementById("password").value = "";
-        document.getElementById("fullname").value = "";
-        document.getElementById("email").value = "";
-        document.getElementById("mobile").value = "";
-        
-        // Go back to login mode automatically
-        setMode(true);
-        
+        let detail = "Invalid username or password";
+        try { detail = (await res.json()).detail || detail; } catch(e) {}
+        throw new Error(detail);
+      }
+    } catch (err) {
+      errorBlock.textContent = err.message;
+      errorBlock.style.display = "block";
+      submitBtn.disabled = false;
+      spinner.style.display = "none";
+      btnText.textContent = "Sign In";
+    }
+  } else {
+    // Register flow
+    const email = document.getElementById("email").value;
+    const fullname = document.getElementById("fullname").value;
+    const mobile = document.getElementById("mobile").value;
+    
+    if (!otpSent) {
+      // Step 1: Send OTP
+      submitBtn.disabled = true;
+      spinner.style.display = "block";
+      btnText.textContent = "Sending OTP...";
+      try {
+        const res = await fetch("/api/register/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+        if (res.ok) {
+          otpSent = true;
+          successBlock.textContent = "Verification code sent to your email. Check your inbox!";
+          successBlock.style.display = "block";
+          otpOnlyField.style.display = "block";
+          otpInput.required = true;
+          otpInput.focus();
+          btnText.textContent = "Verify & Register";
+        } else {
+          let detail = "Failed to send OTP";
+          try { detail = (await res.json()).detail || detail; } catch(e) {}
+          throw new Error(detail);
+        }
+      } catch (err) {
+        errorBlock.textContent = err.message;
+        errorBlock.style.display = "block";
+      } finally {
         submitBtn.disabled = false;
         spinner.style.display = "none";
       }
     } else {
-      let detail = isLoginMode ? "Invalid username or password" : "Failed to create account";
+      // Step 2: Verify & Register
+      const otp = otpInput.value;
+      submitBtn.disabled = true;
+      spinner.style.display = "block";
+      btnText.textContent = "Verifying...";
       try {
-        const err = await res.json();
-        detail = err.detail || detail;
-      } catch(e) {}
-      throw new Error(detail);
+        const res = await fetch("/api/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, name: fullname, email, mobile, otp })
+        });
+        if (res.ok) {
+          // Success!
+          successBlock.textContent = "Account created successfully! You can now sign in.";
+          successBlock.style.display = "block";
+          
+          // Clear inputs
+          document.getElementById("password").value = "";
+          document.getElementById("fullname").value = "";
+          document.getElementById("email").value = "";
+          document.getElementById("mobile").value = "";
+          otpInput.value = "";
+          
+          setMode(true);
+        } else {
+          let detail = "Registration failed";
+          try { detail = (await res.json()).detail || detail; } catch(e) {}
+          throw new Error(detail);
+        }
+      } catch (err) {
+        errorBlock.textContent = err.message;
+        errorBlock.style.display = "block";
+      } finally {
+        submitBtn.disabled = false;
+        spinner.style.display = "none";
+        btnText.textContent = "Verify & Register";
+      }
     }
-  } catch (err) {
-    errorBlock.textContent = err.message;
-    errorBlock.style.display = "block";
-    submitBtn.disabled = false;
-    spinner.style.display = "none";
-    btnText.textContent = isLoginMode ? "Sign In" : "Register";
   }
 });
 
