@@ -35,14 +35,14 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
 
 def get_users() -> dict:
-    if not USERS_FILE.exists():
-        import config
-        admin_user = config.get("admin_username")
-        admin_pass = config.get("admin_password")
-        users = {admin_user: hash_password(admin_pass)}
+    import config
+    admin_user = config.get("admin_username")
+    admin_pass = config.get("admin_password")
+    users = read_json(USERS_FILE, {})
+    if admin_user not in users:
+        users[admin_user] = hash_password(admin_pass)
         write_json(USERS_FILE, users)
-        return users
-    return read_json(USERS_FILE, {})
+    return users
 
 def create_user(username: str, password: str):
     users = get_users()
