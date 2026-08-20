@@ -309,7 +309,6 @@ const otpInput = document.getElementById("otp");
 
 let isLoginMode = true;
 let otpSent = false;
-const isSmtpConfigured = {{IS_SMTP_CONFIGURED}};
 
 // Show Google sign-in if client ID is configured
 const gClientId = "{{GOOGLE_CLIENT_ID}}";
@@ -354,7 +353,7 @@ function setMode(loginMode) {
     toggleBtn.textContent = "Create one";
   } else {
     brandText.textContent = "Create a new account to get started";
-    btnText.textContent = isSmtpConfigured ? "Send OTP" : "Register";
+    btnText.textContent = "Send OTP";
     toggleText.textContent = "Already have an account? ";
     toggleBtn.textContent = "Sign in";
   }
@@ -406,7 +405,7 @@ form.addEventListener("submit", async (e) => {
     const fullname = document.getElementById("fullname").value;
     const mobile = document.getElementById("mobile").value;
     
-    if (isSmtpConfigured && !otpSent) {
+    if (!otpSent) {
       // Step 1: Send OTP
       submitBtn.disabled = true;
       spinner.style.display = "block";
@@ -438,11 +437,11 @@ form.addEventListener("submit", async (e) => {
         spinner.style.display = "none";
       }
     } else {
-      // Step 2: Verify & Register (or direct registration if SMTP is not configured)
-      const otp = isSmtpConfigured ? otpInput.value : "";
+      // Step 2: Verify & Register
+      const otp = otpInput.value;
       submitBtn.disabled = true;
       spinner.style.display = "block";
-      btnText.textContent = isSmtpConfigured ? "Verifying..." : "Registering...";
+      btnText.textContent = "Verifying...";
       try {
         const res = await fetch("/api/register", {
           method: "POST",
@@ -473,7 +472,7 @@ form.addEventListener("submit", async (e) => {
       } finally {
         submitBtn.disabled = false;
         spinner.style.display = "none";
-        btnText.textContent = isSmtpConfigured ? "Verify & Register" : "Register";
+        btnText.textContent = "Verify & Register";
       }
     }
   }

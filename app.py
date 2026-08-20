@@ -163,7 +163,7 @@ def send_otp_email(to_email: str, otp: str):
     
     print(f"\n========================================\n[EMAIL OTP] Code for {to_email} is: {otp}\n========================================\n", flush=True)
     if not user or not password:
-        raise ValueError("SMTP credentials are not configured on the server. Please ask the administrator to configure SMTP details in Settings.")
+        return
         
     try:
         msg = MIMEText(f"Your FaceSort registration verification code is: {otp}\nIt will expire in 5 minutes.")
@@ -176,7 +176,7 @@ def send_otp_email(to_email: str, otp: str):
             server.login(user, password)
             server.sendmail(user, [to_email], msg.as_string())
     except Exception as e:
-        raise RuntimeError(f"SMTP error while sending email: {e}")
+        print(f"Error sending SMTP mail: {e}", flush=True)
 
 @app.post("/api/register/send-otp")
 def send_register_otp(body: SendOtpIn):
@@ -190,12 +190,7 @@ def send_register_otp(body: SendOtpIn):
         "otp": otp,
         "expires_at": time.time() + 300
     }
-    try:
-        send_otp_email(email, otp)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    send_otp_email(email, otp)
     return {"detail": "OTP sent successfully"}
 
 @app.post("/api/login")
@@ -221,20 +216,14 @@ def register(body: RegisterIn):
     
     if not username or not password:
         raise HTTPException(status_code=400, detail="Username and password cannot be empty")
-    # Only verify OTP if SMTP is configured
-    user_smtp = config.get("smtp_user")
-    password_smtp = config.get("smtp_password")
-    smtp_enabled = bool(user_smtp and password_smtp)
-    
-    if smtp_enabled:
-        if not email or not otp:
-            raise HTTPException(status_code=400, detail="Email and OTP are required for registration")
-            
-        pending = _pending_otps.get(email)
-        if not pending or pending["expires_at"] < time.time() or pending["otp"] != otp:
-            raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-            
-        _pending_otps.pop(email, None)
+    if not email or not otp:
+        raise HTTPException(status_code=400, detail="Email and OTP are required for registration")
+        
+    pending = _pending_otps.get(email)
+    if not pending or pending["expires_at"] < time.time() or pending["otp"] != otp:
+        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+        
+    _pending_otps.pop(email, None)
     
     try:
         storage.create_user_full(
