@@ -51,15 +51,28 @@ app.add_middleware(
 
 STATIC = Path(__file__).parent / "static"
 
-SESSION_TOKEN = "facesort_session_active"
+SESSION_PREFIX = "facesort_session_active_"
+
+def get_current_user(request: Request) -> str | None:
+    session_token = request.cookies.get("session_token")
+    if session_token and session_token.startswith(SESSION_PREFIX):
+        username = session_token[len(SESSION_PREFIX):]
+        # Verify user still exists in database
+        if username in storage.get_users():
+            return username
+    return None
+
+def is_super_admin(request: Request) -> bool:
+    user = get_current_user(request)
+    return user == config.get("admin_username")
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
     if path in ["/api/login", "/api/logout", "/api/register", "/favicon.ico"]:
         return await call_next(request)
-    session_token = request.cookies.get("session_token")
-    is_auth = (session_token == SESSION_TOKEN)
+    username = get_current_user(request)
+    is_auth = (username is not None)
     if path.startswith("/api/"):
         if not is_auth:
             return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
@@ -99,7 +112,7 @@ def login(body: LoginIn, response: Response):
     if storage.verify_user(body.username, body.password):
         response.set_cookie(
             key="session_token",
-            value=SESSION_TOKEN,
+            value=f"{SESSION_PREFIX}{body.username}",
             httponly=True,
             samesite="lax",
             max_age=3600 * 24 * 7
@@ -141,7 +154,7 @@ class SettingsPatch(BaseModel):
 
 
 @app.get("/api/settings")
-def read_settings():
+def read_settings(request: Request):
     settings = config.load()
     devices = engine.available_devices()
     return {
@@ -150,11 +163,14 @@ def read_settings():
         "active_device": engine.resolve_device(settings["device"]),
         "data_root": str(config.DATA_ROOT),
         "heic": engine.HEIC_OK,
+        "is_admin": is_super_admin(request),
     }
 
 
 @app.put("/api/settings")
-def write_settings(patch: SettingsPatch):
+def write_settings(patch: SettingsPatch, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(status_code=403, detail="Only Super Admin can modify settings")
     values = {k: v for k, v in patch.model_dump().items() if v is not None}
     if "threshold" in values:
         values["threshold"] = max(0.1, min(0.95, float(values["threshold"])))
@@ -185,7 +201,9 @@ def get_one_event(event_id: str):
 
 
 @app.post("/api/events/{event_id}/reset")
-def reset_workspace(event_id: str):
+def reset_workspace(event_id: str, request: Request):
+    if not is_super_admin(request):
+        raise HTTPException(status_code=403, detail="Only Super Admin can reset workspace")
     if event_id != "workspace":
         raise HTTPException(400, "Only the 'workspace' event is supported.")
     # Cancel any running job

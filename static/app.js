@@ -112,6 +112,11 @@ async function boot() {
     S.event = await api("/events/workspace/reset", { method: "POST" });
   }
 
+  if (!S.isAdmin) {
+    $("resetWorkspace").style.display = "none";
+    $("openSettings").style.display = "none";
+  }
+
   $("resetWorkspace").onclick = resetWorkspace;
   $("openSettings").onclick = openSettings;
   $("logoutBtn").onclick = logout;
@@ -130,6 +135,7 @@ async function loadSettings() {
   S.activeDevice = data.active_device;
   S.dataRoot = data.data_root;
   S.heic = data.heic;
+  S.isAdmin = data.is_admin;
   const names = { cpu: "CPU", cuda: "GPU (CUDA)", coreml: "GPU (Apple)" };
   $("deviceTag").textContent = "Running on " + (names[S.activeDevice] || S.activeDevice);
 }
