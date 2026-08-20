@@ -79,7 +79,7 @@ def is_super_admin(request: Request) -> bool:
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path in ["/api/login", "/api/logout", "/api/register", "/favicon.ico"]:
+    if path in ["/api/login", "/api/logout", "/api/register", "/api/auth/google", "/favicon.ico"]:
         return await call_next(request)
     username = get_current_user(request)
     is_auth = (username is not None)
@@ -89,7 +89,9 @@ async def auth_middleware(request: Request, call_next):
         return await call_next(request)
     if path in ["/", "/index.html"]:
         if not is_auth:
-            return HTMLResponse(content=login_template.get_login_html())
+            g_client_id = config.get("google_client_id") or ""
+            html = login_template.get_login_html().replace("{{GOOGLE_CLIENT_ID}}", g_client_id)
+            return HTMLResponse(content=html)
     return await call_next(request)
 
 
@@ -165,6 +167,60 @@ def logout(response: Response):
     response.delete_cookie(key="session_token")
     return {"detail": "Logged out"}
 
+class GoogleAuthIn(BaseModel):
+    id_token: str
+
+@app.post("/api/auth/google")
+def google_auth(body: GoogleAuthIn, response: Response):
+    client_id = config.get("google_client_id")
+    if not client_id:
+        raise HTTPException(400, "Google Client ID is not configured on server")
+        
+    import urllib.request
+    import urllib.parse
+    import json
+    
+    verify_url = f"https://oauth2.googleapis.com/tokeninfo?id_token={urllib.parse.quote(body.id_token)}"
+    try:
+        req = urllib.request.Request(verify_url)
+        with urllib.request.urlopen(req) as res:
+            info = json.loads(res.read().decode("utf-8"))
+    except Exception as e:
+        raise HTTPException(401, f"Failed to verify Google ID token: {e}")
+        
+    if info.get("aud") != client_id:
+        raise HTTPException(401, "Audience mismatch in ID token")
+        
+    email = info.get("email")
+    name = info.get("name", "")
+    
+    if not email:
+        raise HTTPException(400, "Google account does not share email address")
+        
+    username = email.split("@")[0].replace(".", "_")
+    
+    users = storage.get_users()
+    if username not in users:
+        import uuid
+        random_pass = uuid.uuid4().hex
+        storage.create_user_full(
+            username=username,
+            password=random_pass,
+            name=name,
+            email=email,
+            mobile="",
+            usertype="member"
+        )
+    
+    response.set_cookie(
+        key="session_token",
+        value=f"{SESSION_PREFIX}{username}",
+        httponly=True,
+        samesite="lax",
+        max_age=3600 * 24 * 7
+    )
+    return {"detail": "Authenticated via Google"}
+
 # ---------------------------------------------------------------- user management
 
 @app.get("/api/users")
@@ -232,6 +288,7 @@ class SettingsPatch(BaseModel):
     cache_embeddings: bool | None = None
     thumb_size: int | None = None
     copy_mode: str | None = None
+    google_client_id: str | None = None
 
 
 @app.get("/api/settings")
@@ -246,6 +303,7 @@ def read_settings(request: Request):
         "heic": engine.HEIC_OK,
         "is_admin": is_admin_or_super(request),
         "is_super_admin": is_super_admin(request),
+        "google_client_id": settings.get("google_client_id", ""),
     }
 
 

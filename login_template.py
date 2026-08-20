@@ -5,6 +5,7 @@ def get_login_html():
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FaceSort - Login / Register</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 :root {
   --ink: #101318;
@@ -263,6 +264,26 @@ body::after {
   <div class="toggle-mode">
     <span id="toggleText">Don't have an account? </span><a id="toggleBtn">Create one</a>
   </div>
+
+  <!-- Google Auth Button Container -->
+  <div id="googleAuthSection" style="display: none; margin-top: 15px; border-top: 1px solid var(--line); padding-top: 20px;">
+    <div id="g_id_onload"
+         data-client_id="{{GOOGLE_CLIENT_ID}}"
+         data-context="signin"
+         data-ux_mode="popup"
+         data-callback="handleCredentialResponse"
+         data-auto_prompt="false">
+    </div>
+    <div class="g_id_signin"
+         data-type="standard"
+         data-shape="rectangular"
+         data-theme="dark"
+         data-text="signin_with"
+         data-size="large"
+         data-logo_alignment="left"
+         style="width: 100%; display: flex; justify-content: center;">
+    </div>
+  </div>
 </div>
 
 <script>
@@ -276,8 +297,15 @@ const brandText = document.getElementById("brandText");
 const toggleText = document.getElementById("toggleText");
 const toggleBtn = document.getElementById("toggleBtn");
 const registerFields = document.querySelectorAll(".register-only");
+const googleAuthSection = document.getElementById("googleAuthSection");
 
 let isLoginMode = true;
+
+// Show Google sign-in if client ID is configured
+const gClientId = "{{GOOGLE_CLIENT_ID}}";
+if (gClientId && gClientId.trim() !== "" && gClientId.trim() !== "{"+"g_client_id"+"}" && gClientId.indexOf("{{") === -1) {
+  googleAuthSection.style.display = "block";
+}
 
 function setMode(loginMode) {
   isLoginMode = loginMode;
@@ -286,6 +314,12 @@ function setMode(loginMode) {
   errorBlock.style.display = "none";
   if (!isLoginMode) {
     successBlock.style.display = "none";
+    googleAuthSection.style.display = "none"; // Hide Google button in Register mode
+  } else {
+    // Show Google button in Login mode if configured
+    if (gClientId && gClientId.trim() !== "" && gClientId.indexOf("{{") === -1) {
+      googleAuthSection.style.display = "block";
+    }
   }
   
   // Show or hide register-only fields
@@ -382,6 +416,36 @@ form.addEventListener("submit", async (e) => {
     btnText.textContent = isLoginMode ? "Sign In" : "Register";
   }
 });
+
+async function handleCredentialResponse(response) {
+  submitBtn.disabled = true;
+  spinner.style.display = "block";
+  btnText.textContent = "Signing In...";
+  errorBlock.style.display = "none";
+  successBlock.style.display = "none";
+  
+  try {
+    const res = await fetch("/api/auth/google", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_token: response.credential })
+    });
+    if (res.ok) {
+      window.location.reload();
+    } else {
+      let detail = "Google authentication failed";
+      try { detail = (await res.json()).detail || detail; } catch(e) {}
+      throw new Error(detail);
+    }
+  } catch (err) {
+    errorBlock.textContent = err.message;
+    errorBlock.style.display = "block";
+    submitBtn.disabled = false;
+    spinner.style.display = "none";
+    btnText.textContent = isLoginMode ? "Sign In" : "Register";
+  }
+}
+window.handleCredentialResponse = handleCredentialResponse;
 </script>
 </body>
 </html>

@@ -29,6 +29,7 @@ DEFAULTS = {
     "copy_mode": "copy",
     "admin_username": "admin",
     "admin_password": "admin123",
+    "google_client_id": "",
 }
 
 _lock = threading.Lock()

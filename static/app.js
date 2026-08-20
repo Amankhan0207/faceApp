@@ -141,6 +141,7 @@ async function loadSettings() {
   S.heic = data.heic;
   S.isAdmin = data.is_admin;
   S.isSuperAdmin = data.is_super_admin;
+  S.googleClientId = data.google_client_id;
   const names = { cpu: "CPU", cuda: "GPU (CUDA)", coreml: "GPU (Apple)" };
   $("deviceTag").textContent = "Running on " + (names[S.activeDevice] || S.activeDevice);
 }
@@ -887,6 +888,14 @@ function openSettings() {
             </select>
           </div>
 
+          <div class="setting">
+            <div>
+              <label for="gclientid">Google Client ID</label>
+              <div class="desc">For Google Sign-In. Set up OAuth in Google Cloud Console.</div>
+            </div>
+            <input class="input" type="text" id="gclientid" value="${S.googleClientId || ""}" placeholder="Enter client ID..." style="min-width: 250px;">
+          </div>
+
           <div class="note">
             <div class="label" style="margin-bottom:4px">Data folder</div>
             <span class="num" style="font-size:11px;word-break:break-all">${esc(S.dataRoot)}</span>
@@ -912,6 +921,7 @@ function openSettings() {
           det_size: +$("detsize").value,
           cache_embeddings: true, // forced for test harness
           copy_mode: "copy",     // forced for test harness
+          google_client_id: $("gclientid").value,
         }),
       });
       await loadSettings();
