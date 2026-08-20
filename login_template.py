@@ -26,7 +26,8 @@ def get_login_html():
 
 body {
   font-family: var(--sans);
-  background: var(--ink);
+  background: radial-gradient(circle at center, rgba(16, 19, 24, 0.45) 0%, rgba(16, 19, 24, 0.92) 100%), url("/static/login_bg.jpg") no-repeat center center fixed;
+  background-size: cover;
   color: var(--text);
   min-height: 100vh;
   display: flex;
@@ -35,31 +36,6 @@ body {
   padding: 20px;
   overflow-y: auto;
   position: relative;
-}
-
-/* Background animated glow */
-body::before {
-  content: "";
-  position: absolute;
-  width: 300px;
-  height: 300px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(245,165,36,0.15) 0%, rgba(245,165,36,0) 70%);
-  top: -50px;
-  right: -50px;
-  z-index: -1;
-  animation: float glow1 10s infinite alternate;
-}
-body::after {
-  content: "";
-  position: absolute;
-  width: 400px;
-  height: 400px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(245,165,36,0.1) 0%, rgba(245,165,36,0) 70%);
-  bottom: -100px;
-  left: -100px;
-  z-index: -1;
 }
 
 .login-container {
