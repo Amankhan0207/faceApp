@@ -50,7 +50,7 @@ def get_users() -> dict:
                         elif role == "2":
                             role = "admin"
                             
-                        users[row["username"].strip().lower()] = {
+                        users[row["username"].replace(" ", "").strip().lower()] = {
                             "password_hash": row.get("password_hash") or "",
                             "password_plain": row.get("password") or "",
                             "name": row.get("name") or "",
@@ -111,7 +111,7 @@ def delete_user(username: str):
 
 def verify_user(username: str, password: str) -> bool:
     users = get_users()
-    target_username = username.strip().lower()
+    target_username = username.replace(" ", "").strip().lower()
     if target_username not in users:
         return False
     user_data = users[target_username]

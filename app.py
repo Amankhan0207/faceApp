@@ -56,7 +56,7 @@ SESSION_PREFIX = "facesort_session_active_"
 def get_current_user(request: Request) -> str | None:
     session_token = request.cookies.get("session_token")
     if session_token and session_token.startswith(SESSION_PREFIX):
-        username = session_token[len(SESSION_PREFIX):].strip().lower()
+        username = session_token[len(SESSION_PREFIX):].replace(" ", "").strip().lower()
         # Verify user still exists in database
         if username in storage.get_users():
             return username
@@ -195,16 +195,25 @@ def send_register_otp(body: SendOtpIn):
 
 @app.post("/api/login")
 def login(body: LoginIn, response: Response):
-    username = body.username.strip().lower()
-    if storage.verify_user(username, body.password):
-        response.set_cookie(
-            key="session_token",
-            value=f"{SESSION_PREFIX}{username}",
-            httponly=True,
-            samesite="lax",
-            max_age=3600 * 24 * 7
-        )
-        return {"detail": "Authenticated"}
+    try:
+        username = body.username.replace(" ", "").strip().lower()
+        print(f"DEBUG LOGIN Attempt: {username}", flush=True)
+        if storage.verify_user(username, body.password):
+            print("DEBUG LOGIN: Verified successfully!", flush=True)
+            response.set_cookie(
+                key="session_token",
+                value=f"{SESSION_PREFIX}{username}",
+                httponly=True,
+                samesite="lax",
+                max_age=3600 * 24 * 7
+            )
+            return {"detail": "Authenticated"}
+        else:
+            print("DEBUG LOGIN: Verification failed!", flush=True)
+    except Exception as ex:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {ex}")
     raise HTTPException(status_code=401, detail="Invalid username or password")
 
 def validate_password_strength(password: str):
