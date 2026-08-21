@@ -216,10 +216,6 @@ body {
     </div>
 
     <!-- Registration Fields -->
-    <div class="form-group register-only" style="display: none;">
-      <label for="fullname">Full Name</label>
-      <input type="text" id="fullname" autocomplete="name">
-    </div>
 
     <div class="form-group register-only" style="display: none;">
       <label for="email">Email</label>
@@ -379,7 +375,6 @@ form.addEventListener("submit", async (e) => {
   } else {
     // Register flow
     const email = document.getElementById("email").value;
-    const fullname = document.getElementById("fullname").value;
     const mobile = document.getElementById("mobile").value;
     
     // Password strength check
@@ -437,7 +432,7 @@ form.addEventListener("submit", async (e) => {
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, name: fullname, email, mobile, otp })
+          body: JSON.stringify({ username, password, name: "", email, mobile, otp })
         });
         if (res.ok) {
           // Success!
@@ -446,7 +441,6 @@ form.addEventListener("submit", async (e) => {
           
           // Clear inputs
           document.getElementById("password").value = "";
-          document.getElementById("fullname").value = "";
           document.getElementById("email").value = "";
           document.getElementById("mobile").value = "";
           otpInput.value = "";
