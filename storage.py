@@ -41,15 +41,22 @@ def get_users() -> dict:
             with conn.cursor() as cursor:
                 cursor.execute("SHOW TABLES LIKE 'users'")
                 if cursor.fetchone():
-                    cursor.execute("SELECT username, password_hash, name, email, mobile, usertype FROM users")
+                    cursor.execute("SELECT * FROM users")
                     rows = cursor.fetchall()
                     for row in rows:
+                        role = str(row.get("usertype") or "member")
+                        if role == "1":
+                            role = "super_admin"
+                        elif role == "2":
+                            role = "admin"
+                            
                         users[row["username"]] = {
-                            "password_hash": row["password_hash"],
-                            "name": row["name"],
-                            "email": row["email"],
-                            "mobile": row["mobile"],
-                            "usertype": row["usertype"]
+                            "password_hash": row.get("password_hash") or "",
+                            "password_plain": row.get("password") or "",
+                            "name": row.get("name") or "",
+                            "email": row.get("email") or "",
+                            "mobile": row.get("mobile") or row.get("mobile_no") or "",
+                            "usertype": role
                         }
         except Exception as e:
             print(f"Error loading users from MySQL: {e}", flush=True)
@@ -107,9 +114,22 @@ def verify_user(username: str, password: str) -> bool:
     if username not in users:
         return False
     user_data = users[username]
-    if isinstance(user_data, str):
-        return user_data == hash_password(password)
-    return user_data.get("password_hash") == hash_password(password)
+    
+    # Check plaintext password
+    plain_pw = user_data.get("password_plain")
+    if plain_pw and str(plain_pw) == str(password):
+        return True
+        
+    # Check SHA256 hashed password
+    stored_hash = user_data.get("password_hash")
+    if stored_hash and stored_hash == hash_password(password):
+        return True
+        
+    # Fallback
+    if plain_pw and plain_pw == hash_password(password):
+        return True
+        
+    return False
 
 IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".heic", ".heif"}
 
