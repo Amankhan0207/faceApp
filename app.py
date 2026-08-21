@@ -79,7 +79,7 @@ def is_super_admin(request: Request) -> bool:
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path in ["/api/login", "/api/logout", "/api/register", "/api/register/send-otp", "/api/auth/google", "/api/auth/captcha", "/favicon.ico"]:
+    if path in ["/api/login", "/api/logout", "/api/register", "/api/register/send-otp", "/api/auth/google", "/favicon.ico"]:
         return await call_next(request)
     username = get_current_user(request)
     is_auth = (username is not None)
@@ -130,7 +130,6 @@ def require_person(event_id: str, person_id: str):
 class LoginIn(BaseModel):
     username: str
     password: str
-    captcha: str = ""
 
 class RegisterIn(BaseModel):
     username: str
@@ -139,7 +138,6 @@ class RegisterIn(BaseModel):
     email: str = ""
     mobile: str = ""
     otp: str = ""
-    captcha: str = ""
 
 class CreateUserIn(BaseModel):
     username: str
@@ -153,103 +151,6 @@ class SendOtpIn(BaseModel):
     email: str
 
 _pending_otps = {}
-
-_pending_captchas = {}
-
-def generate_captcha_image(text: str) -> bytes:
-    import random
-    import io
-    from PIL import Image, ImageDraw, ImageFont
-    width, height = 120, 42
-    img = Image.new("RGB", (width, height), color=(23, 27, 34))
-    draw = ImageDraw.Draw(img)
-    
-    try:
-        font = ImageFont.truetype("arial.ttf", 24)
-    except Exception:
-        try:
-            font = ImageFont.truetype(r"C:\Windows\Fonts\arial.ttf", 24)
-        except Exception:
-            font = ImageFont.load_default()
-            
-    # Noise lines
-    for _ in range(5):
-        x1 = random.randint(0, width)
-        y1 = random.randint(0, height)
-        x2 = random.randint(0, width)
-        y2 = random.randint(0, height)
-        draw.line((x1, y1, x2, y2), fill=(60, 70, 80), width=1)
-        
-    # Noise points
-    for _ in range(30):
-        x = random.randint(0, width)
-        y = random.randint(0, height)
-        draw.point((x, y), fill=(80, 90, 100))
-        
-    # Draw characters
-    for i, char in enumerate(text):
-        char_x = 10 + i * 20 + random.randint(-2, 2)
-        char_y = 8 + random.randint(-2, 2)
-        color = random.choice([
-            (245, 165, 36),  # amber
-            (63, 191, 127),  # green
-            (36, 165, 245),  # cyan
-            (230, 100, 100)   # reddish
-        ])
-        
-        # Check standard text drawing (ImageFont.load_default() returns a non-truetype font in older PIL versions)
-        if hasattr(font, "getbbox") or hasattr(font, "getsize"):
-            draw.text((char_x, char_y), char, fill=color, font=font)
-        else:
-            for dx in [-1, 0, 1]:
-                for dy in [-1, 0, 1]:
-                    draw.text((char_x + dx, char_y + dy), char, fill=color, font=font)
-                    
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
-
-@app.get("/api/auth/captcha")
-def get_captcha():
-    import random
-    import uuid
-    import time
-    from fastapi.responses import Response as FastApiResponse
-    
-    # Generate 5-character alphanumeric text (excluding confusing chars)
-    chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"
-    text = "".join(random.choice(chars) for _ in range(5))
-    captcha_id = str(uuid.uuid4())
-    _pending_captchas[captcha_id] = {
-        "text": text,
-        "expires_at": time.time() + 300
-    }
-    
-    img_bytes = generate_captcha_image(text)
-    res = FastApiResponse(content=img_bytes, media_type="image/png")
-    res.set_cookie(
-        key="captcha_id",
-        value=captcha_id,
-        httponly=True,
-        samesite="lax",
-        max_age=300
-    )
-    return res
-
-def verify_captcha_code(request: Request, captcha_val: str):
-    import time
-    captcha_id = request.cookies.get("captcha_id")
-    if not captcha_id:
-        raise HTTPException(status_code=400, detail="CAPTCHA is missing or cookies are disabled")
-        
-    pending = _pending_captchas.get(captcha_id)
-    _pending_captchas.pop(captcha_id, None)  # Pop immediately to prevent reuse
-    
-    if not pending or pending["expires_at"] < time.time():
-        raise HTTPException(status_code=400, detail="CAPTCHA has expired. Please refresh CAPTCHA.")
-        
-    if not captcha_val or pending["text"].lower() != captcha_val.strip().lower():
-        raise HTTPException(status_code=400, detail="Incorrect CAPTCHA code. Please try again.")
 
 def send_otp_email(to_email: str, otp: str):
     import smtplib
@@ -293,8 +194,7 @@ def send_register_otp(body: SendOtpIn):
     return {"detail": "OTP sent successfully"}
 
 @app.post("/api/login")
-def login(body: LoginIn, request: Request, response: Response):
-    verify_captcha_code(request, body.captcha)
+def login(body: LoginIn, response: Response):
     if storage.verify_user(body.username, body.password):
         response.set_cookie(
             key="session_token",
@@ -318,8 +218,7 @@ def validate_password_strength(password: str):
         raise ValueError("Password must contain at least one special character (e.g. @, #, $, %)")
 
 @app.post("/api/register")
-def register(body: RegisterIn, request: Request):
-    verify_captcha_code(request, body.captcha)
+def register(body: RegisterIn):
     import time
     username = body.username.strip()
     password = body.password.strip()

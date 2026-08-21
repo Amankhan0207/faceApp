@@ -93,6 +93,21 @@ def init_mysql_db():
                     usertype VARCHAR(50) NOT NULL
                 ) ENGINE=InnoDB;
             """)
+            
+            # Alter users table if it pre-existed with different columns
+            cursor.execute("DESCRIBE users")
+            columns = {row["Field"] for row in cursor.fetchall()}
+            if "password_hash" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(256) NOT NULL;")
+            if "name" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN name VARCHAR(150);")
+            if "email" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN email VARCHAR(150);")
+            if "mobile" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN mobile VARCHAR(50);")
+            if "usertype" not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN usertype VARCHAR(50) NOT NULL DEFAULT 'member';")
+
             # Create settings table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS settings (
