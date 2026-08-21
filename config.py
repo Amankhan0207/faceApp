@@ -44,6 +44,137 @@ def ensure_dirs():
     EVENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def get_db_connection(create_db=True):
+    import pymysql
+    try:
+        conn = pymysql.connect(
+            host="localhost",
+            port=3306,
+            user="root",
+            password="password",
+            charset="utf8mb4"
+        )
+        if create_db:
+            with conn.cursor() as cursor:
+                cursor.execute("CREATE DATABASE IF NOT EXISTS facesort CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
+            conn.commit()
+        conn.close()
+        
+        return pymysql.connect(
+            host="localhost",
+            port=3306,
+            user="root",
+            password="password",
+            database="facesort",
+            charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor
+        )
+    except Exception as e:
+        print(f"Error connecting to MySQL: {e}", flush=True)
+        return None
+
+
+def init_mysql_db():
+    conn = get_db_connection(create_db=True)
+    if not conn:
+        print("Skipping MySQL initialization: DB connection failed.", flush=True)
+        return
+        
+    try:
+        with conn.cursor() as cursor:
+            # Create users table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    username VARCHAR(80) PRIMARY KEY,
+                    password_hash VARCHAR(256) NOT NULL,
+                    name VARCHAR(150),
+                    email VARCHAR(150),
+                    mobile VARCHAR(50),
+                    usertype VARCHAR(50) NOT NULL
+                ) ENGINE=InnoDB;
+            """)
+            # Create settings table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS settings (
+                    `key` VARCHAR(100) PRIMARY KEY,
+                    `value` TEXT NOT NULL
+                ) ENGINE=InnoDB;
+            """)
+            
+            # Migrate existing local users to MySQL
+            cursor.execute("SELECT COUNT(*) as count FROM users")
+            row = cursor.fetchone()
+            if row["count"] == 0:
+                local_users = {}
+                users_file = DATA_ROOT / "users.json"
+                if users_file.exists():
+                    try:
+                        local_users = json.loads(users_file.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                
+                admin_user = DEFAULTS.get("admin_username", "admin")
+                admin_pass = DEFAULTS.get("admin_password", "admin123")
+                
+                import hashlib
+                def hash_pass(password: str) -> str:
+                    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+                    
+                if admin_user not in local_users:
+                    local_users[admin_user] = {
+                        "password_hash": hash_pass(admin_pass),
+                        "name": "Super Admin",
+                        "email": "admin@example.com",
+                        "mobile": "",
+                        "usertype": "super_admin"
+                    }
+                    
+                for username, udata in local_users.items():
+                    if isinstance(udata, str):
+                        p_hash = udata
+                        name = "Super Admin" if username == admin_user else username
+                        email = "admin@example.com" if username == admin_user else ""
+                        mobile = ""
+                        usertype = "super_admin" if username == admin_user else "member"
+                    else:
+                        p_hash = udata.get("password_hash")
+                        name = udata.get("name", "")
+                        email = udata.get("email", "")
+                        mobile = udata.get("mobile", "")
+                        usertype = udata.get("usertype", "member")
+                        
+                    cursor.execute("""
+                        INSERT INTO users (username, password_hash, name, email, mobile, usertype)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (username, p_hash, name, email, mobile, usertype))
+            
+            # Migrate settings to MySQL
+            cursor.execute("SELECT COUNT(*) as count FROM settings")
+            row = cursor.fetchone()
+            if row["count"] == 0:
+                local_settings = dict(DEFAULTS)
+                if SETTINGS_FILE.exists():
+                    try:
+                        local_settings.update(json.loads(SETTINGS_FILE.read_text(encoding="utf-8")))
+                    except Exception:
+                        pass
+                for k, v in local_settings.items():
+                    cursor.execute("""
+                        INSERT INTO settings (`key`, `value`)
+                        VALUES (%s, %s)
+                    """, (k, json.dumps(v)))
+                    
+        conn.commit()
+        print("MySQL database and tables initialized successfully.", flush=True)
+    except Exception as e:
+        print(f"Error initializing MySQL database: {e}", flush=True)
+    finally:
+        conn.close()
+
+
+init_mysql_db()
+
+
 def load():
     global _cache
     with _lock:
@@ -51,11 +182,27 @@ def load():
             return dict(_cache)
         ensure_dirs()
         values = dict(DEFAULTS)
-        if SETTINGS_FILE.exists():
+        
+        # Load from MySQL
+        conn = get_db_connection(create_db=False)
+        if conn:
             try:
-                values.update(json.loads(SETTINGS_FILE.read_text()))
-            except (json.JSONDecodeError, OSError):
-                pass
+                with conn.cursor() as cursor:
+                    cursor.execute("SHOW TABLES LIKE 'settings'")
+                    if cursor.fetchone():
+                        cursor.execute("SELECT `key`, `value` FROM settings")
+                        rows = cursor.fetchall()
+                        for row in rows:
+                            key = row["key"]
+                            val_str = row["value"]
+                            try:
+                                values[key] = json.loads(val_str)
+                            except Exception:
+                                values[key] = val_str
+            except Exception as e:
+                print(f"Error loading settings from MySQL: {e}", flush=True)
+            finally:
+                conn.close()
         _cache = values
         return dict(values)
 
@@ -66,9 +213,26 @@ def save(patch: dict):
     for key, value in patch.items():
         if key in DEFAULTS:
             values[key] = value
+            
+    conn = get_db_connection(create_db=False)
+    if conn:
+        try:
+            with conn.cursor() as cursor:
+                for key, value in patch.items():
+                    if key in DEFAULTS:
+                        val_str = json.dumps(value)
+                        cursor.execute("""
+                            INSERT INTO settings (`key`, `value`)
+                            VALUES (%s, %s)
+                            ON DUPLICATE KEY UPDATE `value` = %s
+                        """, (key, val_str, val_str))
+            conn.commit()
+        except Exception as e:
+            print(f"Error saving settings to MySQL: {e}", flush=True)
+        finally:
+            conn.close()
+            
     with _lock:
-        ensure_dirs()
-        SETTINGS_FILE.write_text(json.dumps(values, indent=2))
         _cache = values
     return dict(values)
 

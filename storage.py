@@ -36,61 +36,73 @@ def hash_password(password: str) -> str:
 
 def get_users() -> dict:
     import config
-    admin_user = config.get("admin_username")
-    admin_pass = config.get("admin_password")
-    users = read_json(USERS_FILE, {})
-    modified = False
-    
-    # Migrate old string password hashes to dict format
-    for username, data in list(users.items()):
-        if isinstance(data, str):
-            users[username] = {
-                "password_hash": data,
-                "name": "Default Admin" if username == admin_user else username,
-                "email": "admin@example.com" if username == admin_user else "",
-                "mobile": "",
-                "usertype": "super_admin" if username == admin_user else "member"
-            }
-            modified = True
-            
-    # Ensure default admin always exists
-    if admin_user not in users:
-        users[admin_user] = {
-            "password_hash": hash_password(admin_pass),
-            "name": "Super Admin",
-            "email": "admin@example.com",
-            "mobile": "",
-            "usertype": "super_admin"
-        }
-        modified = True
-        
-    if modified:
-        write_json(USERS_FILE, users)
-        
+    users = {}
+    conn = config.get_db_connection(create_db=False)
+    if conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("SHOW TABLES LIKE 'users'")
+                if cursor.fetchone():
+                    cursor.execute("SELECT username, password_hash, name, email, mobile, usertype FROM users")
+                    rows = cursor.fetchall()
+                    for row in rows:
+                        users[row["username"]] = {
+                            "password_hash": row["password_hash"],
+                            "name": row["name"],
+                            "email": row["email"],
+                            "mobile": row["mobile"],
+                            "usertype": row["usertype"]
+                        }
+        except Exception as e:
+            print(f"Error loading users from MySQL: {e}", flush=True)
+        finally:
+            conn.close()
     return users
 
 def create_user(username: str, password: str):
     create_user_full(username, password, name="", email="", mobile="", usertype="member")
 
 def create_user_full(username: str, password: str, name: str, email: str, mobile: str, usertype: str):
+    import config
     users = get_users()
     if username in users:
         raise ValueError("User already exists")
-    users[username] = {
-        "password_hash": hash_password(password),
-        "name": name,
-        "email": email,
-        "mobile": mobile,
-        "usertype": usertype
-    }
-    write_json(USERS_FILE, users)
+        
+    conn = config.get_db_connection(create_db=False)
+    if conn:
+        try:
+            with conn.cursor() as cursor:
+                p_hash = hash_password(password)
+                cursor.execute("""
+                    INSERT INTO users (username, password_hash, name, email, mobile, usertype)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (username, p_hash, name, email, mobile, usertype))
+            conn.commit()
+        except Exception as e:
+            raise ValueError(f"Database error: {e}")
+        finally:
+            conn.close()
+    else:
+        raise ValueError("Could not connect to database")
 
 def delete_user(username: str):
+    import config
     users = get_users()
     if username not in users:
         raise ValueError("User not found")
-    del users[username]
-    write_json(USERS_FILE, users)
+        
+    conn = config.get_db_connection(create_db=False)
+    if conn:
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM users WHERE username = %s", (username,))
+            conn.commit()
+        except Exception as e:
+            raise ValueError(f"Database error: {e}")
+        finally:
+            conn.close()
+    else:
+        raise ValueError("Could not connect to database")
 
 def verify_user(username: str, password: str) -> bool:
     users = get_users()
