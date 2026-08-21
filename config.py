@@ -94,9 +94,21 @@ def init_mysql_db():
                 ) ENGINE=InnoDB;
             """)
             
-            # Alter users table if it pre-existed with different columns
+            # Query column structure
             cursor.execute("DESCRIBE users")
-            columns = {row["Field"] for row in cursor.fetchall()}
+            rows = cursor.fetchall()
+            columns = {row["Field"] for row in rows}
+            
+            # Make any NOT NULL columns without default values nullable (except primary key)
+            for r in rows:
+                field = r["Field"]
+                is_nullable = r["Null"] == "YES"
+                default_val = r["Default"]
+                key = r["Key"]
+                if not is_nullable and default_val is None and field != "username" and key != "PRI":
+                    field_type = r["Type"]
+                    cursor.execute(f"ALTER TABLE users MODIFY COLUMN `{field}` {field_type} DEFAULT NULL;")
+                    
             if "password_hash" not in columns:
                 cursor.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(256) NOT NULL;")
             if "name" not in columns:
@@ -107,6 +119,8 @@ def init_mysql_db():
                 cursor.execute("ALTER TABLE users ADD COLUMN mobile VARCHAR(50);")
             if "usertype" not in columns:
                 cursor.execute("ALTER TABLE users ADD COLUMN usertype VARCHAR(50) NOT NULL DEFAULT 'member';")
+            else:
+                cursor.execute("ALTER TABLE users MODIFY COLUMN usertype VARCHAR(50) NOT NULL DEFAULT 'member';")
 
             # Create settings table
             cursor.execute("""
@@ -117,9 +131,13 @@ def init_mysql_db():
             """)
             
             # Migrate existing local users to MySQL
-            cursor.execute("SELECT COUNT(*) as count FROM users")
-            row = cursor.fetchone()
-            if row["count"] == 0:
+            cursor.execute("SELECT username FROM users")
+            db_usernames = {r["username"] for r in cursor.fetchall()}
+            
+            admin_user = DEFAULTS.get("admin_username", "admin")
+            admin_pass = DEFAULTS.get("admin_password", "admin123")
+            
+            if admin_user not in db_usernames:
                 local_users = {}
                 users_file = DATA_ROOT / "users.json"
                 if users_file.exists():
@@ -127,9 +145,6 @@ def init_mysql_db():
                         local_users = json.loads(users_file.read_text(encoding="utf-8"))
                     except Exception:
                         pass
-                
-                admin_user = DEFAULTS.get("admin_username", "admin")
-                admin_pass = DEFAULTS.get("admin_password", "admin123")
                 
                 import hashlib
                 def hash_pass(password: str) -> str:
@@ -145,23 +160,24 @@ def init_mysql_db():
                     }
                     
                 for username, udata in local_users.items():
-                    if isinstance(udata, str):
-                        p_hash = udata
-                        name = "Super Admin" if username == admin_user else username
-                        email = "admin@example.com" if username == admin_user else ""
-                        mobile = ""
-                        usertype = "super_admin" if username == admin_user else "member"
-                    else:
-                        p_hash = udata.get("password_hash")
-                        name = udata.get("name", "")
-                        email = udata.get("email", "")
-                        mobile = udata.get("mobile", "")
-                        usertype = udata.get("usertype", "member")
-                        
-                    cursor.execute("""
-                        INSERT INTO users (username, password_hash, name, email, mobile, usertype)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (username, p_hash, name, email, mobile, usertype))
+                    if username not in db_usernames:
+                        if isinstance(udata, str):
+                            p_hash = udata
+                            name = "Super Admin" if username == admin_user else username
+                            email = "admin@example.com" if username == admin_user else ""
+                            mobile = ""
+                            usertype = "super_admin" if username == admin_user else "member"
+                        else:
+                            p_hash = udata.get("password_hash")
+                            name = udata.get("name", "")
+                            email = udata.get("email", "")
+                            mobile = udata.get("mobile", "")
+                            usertype = udata.get("usertype", "member")
+                            
+                        cursor.execute("""
+                            INSERT INTO users (username, password_hash, name, email, mobile, usertype)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (username, p_hash, name, email, mobile, usertype))
             
             # Migrate settings to MySQL
             cursor.execute("SELECT COUNT(*) as count FROM settings")
