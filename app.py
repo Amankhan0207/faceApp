@@ -56,7 +56,7 @@ SESSION_PREFIX = "facesort_session_active_"
 def get_current_user(request: Request) -> str | None:
     session_token = request.cookies.get("session_token")
     if session_token and session_token.startswith(SESSION_PREFIX):
-        username = session_token[len(SESSION_PREFIX):]
+        username = session_token[len(SESSION_PREFIX):].strip().lower()
         # Verify user still exists in database
         if username in storage.get_users():
             return username
@@ -195,10 +195,11 @@ def send_register_otp(body: SendOtpIn):
 
 @app.post("/api/login")
 def login(body: LoginIn, response: Response):
-    if storage.verify_user(body.username, body.password):
+    username = body.username.strip().lower()
+    if storage.verify_user(username, body.password):
         response.set_cookie(
             key="session_token",
-            value=f"{SESSION_PREFIX}{body.username}",
+            value=f"{SESSION_PREFIX}{username}",
             httponly=True,
             samesite="lax",
             max_age=3600 * 24 * 7
