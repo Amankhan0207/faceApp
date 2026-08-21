@@ -210,7 +210,7 @@ def generate_captcha_image(text: str) -> bytes:
     return buf.getvalue()
 
 @app.get("/api/auth/captcha")
-def get_captcha(response: Response):
+def get_captcha():
     import random
     import uuid
     import time
@@ -226,14 +226,15 @@ def get_captcha(response: Response):
     }
     
     img_bytes = generate_captcha_image(text)
-    response.set_cookie(
+    res = FastApiResponse(content=img_bytes, media_type="image/png")
+    res.set_cookie(
         key="captcha_id",
         value=captcha_id,
         httponly=True,
         samesite="lax",
         max_age=300
     )
-    return FastApiResponse(content=img_bytes, media_type="image/png")
+    return res
 
 def verify_captcha_code(request: Request, captcha_val: str):
     import time
