@@ -232,6 +232,16 @@ body {
       <label for="otp" style="color: var(--amber);">Enter OTP Verification Code</label>
       <input type="text" id="otp" placeholder="Enter 6-digit code..." style="border-color: var(--amber);">
     </div>
+
+    <!-- CAPTCHA Field -->
+    <div class="form-group" style="margin-top: 15px;">
+      <label for="captchaInput">Security Verification</label>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <img id="captchaImage" src="/api/auth/captcha" alt="CAPTCHA" style="border-radius: 6px; height: 42px; width: 120px; cursor: pointer; border: 1px solid var(--line);" title="Click to refresh CAPTCHA">
+        <input type="text" id="captchaInput" required placeholder="Enter code..." autocomplete="off" style="flex: 1; padding: 10px; border-radius: 6px; background: var(--ink); border: 1px solid var(--line); color: var(--text); font-family: monospace; font-size: 16px; letter-spacing: 2px; text-transform: uppercase;">
+      </div>
+      <div style="font-size: 11px; color: var(--dim); margin-top: 4px;">Click image to generate new code.</div>
+    </div>
     
     <button type="submit" class="btn" id="submitBtn">
       <span class="spinner" id="spinner"></span>
@@ -281,6 +291,15 @@ const otpInput = document.getElementById("otp");
 
 let isLoginMode = true;
 let otpSent = false;
+const captchaImage = document.getElementById("captchaImage");
+const captchaInput = document.getElementById("captchaInput");
+
+function refreshCaptcha() {
+  captchaInput.value = "";
+  captchaImage.src = "/api/auth/captcha?t=" + Date.now();
+}
+
+captchaImage.addEventListener("click", refreshCaptcha);
 const isSmtpConfigured = {{IS_SMTP_CONFIGURED}};
 
 // Show Google sign-in if client ID is configured
@@ -332,6 +351,7 @@ function setMode(loginMode) {
   }
   
   document.getElementById("username").focus();
+  refreshCaptcha();
 }
 
 toggleBtn.addEventListener("click", () => {
@@ -356,7 +376,7 @@ form.addEventListener("submit", async (e) => {
       const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, captcha: captchaInput.value })
       });
       if (res.ok) {
         window.location.reload();
@@ -371,6 +391,7 @@ form.addEventListener("submit", async (e) => {
       submitBtn.disabled = false;
       spinner.style.display = "none";
       btnText.textContent = "Sign In";
+      refreshCaptcha();
     }
   } else {
     // Register flow
@@ -432,7 +453,7 @@ form.addEventListener("submit", async (e) => {
         const res = await fetch("/api/register", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password, name: "", email, mobile, otp })
+          body: JSON.stringify({ username, password, name: "", email, mobile, otp, captcha: captchaInput.value })
         });
         if (res.ok) {
           // Success!
@@ -454,6 +475,7 @@ form.addEventListener("submit", async (e) => {
       } catch (err) {
         errorBlock.textContent = err.message;
         errorBlock.style.display = "block";
+        refreshCaptcha();
       } finally {
         submitBtn.disabled = false;
         spinner.style.display = "none";
