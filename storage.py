@@ -27,9 +27,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from config import EVENTS_DIR, ensure_dirs, DATA_ROOT
-
-USERS_FILE = DATA_ROOT / "users.json"
+from config import EVENTS_DIR, ensure_dirs
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode("utf-8")).hexdigest()
